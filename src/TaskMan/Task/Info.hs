@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module Info where
+module TaskMan.Task.Info where
 
 import Data.Time
 
@@ -23,7 +23,7 @@ finals = [Finished, Failed, Canceled, Killed]
 
 -- Properties that are set once when the task is started and never change.
 data InitialInfo = InitialInfo
-  { id :: TaskId
+  { taskId :: TaskId
   , title :: String
   , started :: UTCTime
   , parent :: Maybe TaskId
