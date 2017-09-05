@@ -21,7 +21,7 @@ data Event
   -- Queries
   | GetTotalCount (MVar Int)
   | GetCount State (MVar Int)
-  | GetInfo TaskId (MVar Info)
+  | GetInfo TaskId (MVar (Maybe Info))
   -- Feedback frorm the tasks
   | Finished (TaskId)
   | Failed (TaskId)
@@ -131,8 +131,8 @@ onGetCount s
   . M.toList
   . taskMap
 
-onGetInfo :: TaskId -> TaskManState -> Info
+onGetInfo :: TaskId -> TaskManState -> Maybe Info
 onGetInfo id
-  = info
-  . (!id)
+  = fmap info
+  . M.lookup id
   . taskMap
