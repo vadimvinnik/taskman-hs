@@ -68,7 +68,7 @@ queryState f stateM = (readMVar stateM) >>= f
 
 modifyState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
 modifyState f stateM = do
-  state <- readMVar stateM
+  state <- takeMVar stateM
   (state', result) <- f state
   putMVar stateM state'
   return result
