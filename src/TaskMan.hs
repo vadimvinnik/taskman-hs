@@ -59,16 +59,16 @@ taskManLoop stateM eventM = do
   case event of
     Start action idM -> modifyState (onStart action idM) stateM >>= putMVar idM
     Kill taskId -> modifyState_ (onKill taskId) stateM
-    GetTotalCount countM -> queryState (onGetTotalCount) stateM >>= putMVar countM
-    GetCount state countM -> queryState (onGetCount state) stateM >>= putMVar countM
-    GetInfo taskId infoM -> queryState (onGetInfo taskId) stateM >>= putMVar infoM
+    GetTotalCount countM -> queryState (onGetTotalCount) stateM countM
+    GetCount state countM -> queryState (onGetCount state) stateM countM
+    GetInfo taskId infoM -> queryState (onGetInfo taskId) stateM infoM
     _ -> undefined
   case event of
     Shutdown -> return ()
     _ -> taskManLoop stateM eventM
 
-queryState :: (TaskManState -> IO a) -> MVar TaskManState -> IO a
-queryState f stateM = (readMVar stateM) >>= f
+queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
+queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
 modifyState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
 modifyState f stateM = do
@@ -118,24 +118,21 @@ onKill taskId state = do
   killThread $ threadId task_
   return state'
 
-onGetTotalCount :: TaskManState -> IO Int
+onGetTotalCount :: TaskManState -> Int
 onGetTotalCount
-  = return
-  . M.size
+  = M.size
   . taskMap
 
-onGetCount :: State -> TaskManState -> IO Int
+onGetCount :: State -> TaskManState -> Int
 onGetCount s
-  = return
-  . length
+  = length
   . filter (==s)
   . fmap (state . current . info . snd)
   . M.toList
   . taskMap
 
-onGetInfo :: TaskId -> TaskManState -> IO Info
+onGetInfo :: TaskId -> TaskManState -> Info
 onGetInfo id
-  = return
-  . info
+  = info
   . (!id)
   . taskMap
