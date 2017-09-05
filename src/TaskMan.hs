@@ -1,3 +1,5 @@
+{-# LANGUAGE TupleSections #-}
+
 module TaskMan where
 
 import Control.Concurrent
@@ -54,8 +56,8 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action idM -> onStart stateM action idM
-    Kill taskId -> onKill stateM taskId
+    Start action idM -> modifyState (onStart action idM) stateM >>= putMVar idM
+    Kill taskId -> modifyState_ (onKill taskId) stateM
     _ -> undefined
   case event of
     Shutdown -> return ()
@@ -71,9 +73,11 @@ modifyState f stateM = do
   putMVar stateM state'
   return result
 
-onStart :: MVar TaskManState -> IO () -> MVar TaskId -> IO ()
-onStart stateM action idM = do
-  state <- readMVar stateM
+modifyState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
+modifyState_ f = modifyState (fmap (fmap (, ())) f)
+
+onStart :: IO () -> MVar TaskId -> TaskManState -> IO (TaskManState, TaskId)
+onStart action idM state = do
   let taskId = nextId state
   now <- getCurrentTime
   threadId <- forkIO action
@@ -94,12 +98,10 @@ onStart stateM action idM = do
   let info = Info initial current
   let task = Task threadId info
   let taskMap' = M.insert taskId task $ taskMap state
-  putMVar stateM $ TaskManState (taskId + 1) taskMap'
-  putMVar idM taskId
+  return (TaskManState (taskId + 1) taskMap', taskId)
 
-onKill :: MVar TaskManState -> TaskId -> IO ()
-onKill stateM taskId = do
-  state <- readMVar stateM
+onKill :: TaskId -> TaskManState -> IO TaskManState
+onKill taskId state = do
   let taskMap_ = taskMap state
   let task_ = taskMap_ ! taskId
   let info_ = info task_
@@ -109,5 +111,5 @@ onKill stateM taskId = do
   let task' = task_ { info = info' }
   let taskMap' = M.insert taskId task' taskMap_
   let state' = state { taskMap = taskMap' }
-  putMVar stateM state'
   killThread $ threadId task_
+  return state'
