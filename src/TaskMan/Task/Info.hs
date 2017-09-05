@@ -7,8 +7,7 @@ import Data.Time
 type TaskId = Int
 
 data State
-  = Starting
-  | Running
+  = Running
   | Paused
   | Waiting
   | Canceling
@@ -33,7 +32,7 @@ data InitialInfo = InitialInfo
 data CurrentInfo = CurrentInfo
   { state :: State
   , phase :: String
-  , elapsed :: NominalDiffTime
+  , ended :: Maybe UTCTime
   , children :: [Info]
   , totalWork :: Maybe Int
   , doneWork :: Int
@@ -50,12 +49,7 @@ isFinal s = s `elem` finals
 isFinished :: Info -> Bool
 isFinished = isFinal . state . current
 
-ended :: Info -> Maybe UTCTime
-ended i =
-  if isFinished i
-    then Just $ addUTCTime (elapsed $ current i) (started $ initial i)
-    else Nothing
-
+-- todo: if finished then 100%
 percentDone :: Info -> Maybe Float
 percentDone i =
   fmap (\x -> (fromIntegral $ doneWork $ current i) / (fromIntegral x)) $ totalWork $ current i
