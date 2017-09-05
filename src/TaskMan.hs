@@ -28,8 +28,7 @@ data Event
 
 data Task = Task
   { threadId :: ThreadId
-  , initial :: InitialInfo
-  , current :: CurrentInfo
+  , info :: Info
   }
 
 type TaskMap = M.Map TaskId Task
@@ -82,12 +81,22 @@ onStart stateM action idM = do
     totalWork = Nothing,
     doneWork = 0
   }
-  let task = Task threadId initial current
+  let info = Info initial current
+  let task = Task threadId info
   let taskMap' = M.insert taskId task $ taskMap state
   putMVar stateM $ TaskManState (taskId + 1) taskMap'
   putMVar idM taskId
 
 onKill stateM taskId = do
   state <- readMVar stateM
-  let taskState = (taskMap state) ! taskId
-  killThread $ threadId taskState
+  let taskMap_ = taskMap state
+  let task_ = taskMap_ ! taskId
+  let info_ = info task_
+  let current_ = current info_
+  let current' = current_ { state = Canceling }
+  let info' = info_ { current = current' }
+  let task' = task_ { info = info' }
+  let taskMap' = M.insert taskId task' taskMap_
+  let state' = state { taskMap = taskMap' }
+  putMVar stateM state'
+  killThread $ threadId task_
