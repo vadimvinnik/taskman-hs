@@ -61,6 +61,16 @@ taskManLoop stateM eventM = do
     Shutdown -> return ()
     _ -> taskManLoop stateM eventM
 
+queryState :: (TaskManState -> IO a) -> MVar TaskManState -> IO a
+queryState f stateM = (readMVar stateM) >>= f
+
+modifyState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
+modifyState f stateM = do
+  state <- readMVar stateM
+  (state', result) <- f state
+  putMVar stateM state'
+  return result
+
 onStart :: MVar TaskManState -> IO () -> MVar TaskId -> IO ()
 onStart stateM action idM = do
   state <- readMVar stateM
@@ -87,6 +97,7 @@ onStart stateM action idM = do
   putMVar stateM $ TaskManState (taskId + 1) taskMap'
   putMVar idM taskId
 
+onKill :: MVar TaskManState -> TaskId -> IO ()
 onKill stateM taskId = do
   state <- readMVar stateM
   let taskMap_ = taskMap state
