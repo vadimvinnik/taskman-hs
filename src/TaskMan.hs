@@ -4,7 +4,8 @@ module TaskMan where
 
 import Control.Concurrent
 import Control.Monad
-import Data.Map as M
+import Data.Map ((!))
+import qualified Data.Map as M
 import Data.Time
 import TaskMan.Task.Info
 
@@ -58,6 +59,9 @@ taskManLoop stateM eventM = do
   case event of
     Start action idM -> modifyState (onStart action idM) stateM >>= putMVar idM
     Kill taskId -> modifyState_ (onKill taskId) stateM
+    GetTotalCount countM -> queryState (onGetTotalCount) stateM >>= putMVar countM
+    GetCount state countM -> queryState (onGetCount state) stateM >>= putMVar countM
+    GetInfo taskId infoM -> queryState (onGetInfo taskId) stateM >>= putMVar infoM
     _ -> undefined
   case event of
     Shutdown -> return ()
@@ -113,3 +117,25 @@ onKill taskId state = do
   let state' = state { taskMap = taskMap' }
   killThread $ threadId task_
   return state'
+
+onGetTotalCount :: TaskManState -> IO Int
+onGetTotalCount
+  = return
+  . M.size
+  . taskMap
+
+onGetCount :: State -> TaskManState -> IO Int
+onGetCount s
+  = return
+  . length
+  . filter (==s)
+  . fmap (state . current . info . snd)
+  . M.toList
+  . taskMap
+
+onGetInfo :: TaskId -> TaskManState -> IO Info
+onGetInfo id
+  = return
+  . info
+  . (!id)
+  . taskMap
