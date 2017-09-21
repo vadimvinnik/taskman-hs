@@ -3,7 +3,6 @@
 module Control.Concurrent.TaskMan where
 
 import Control.Concurrent
-import Control.Monad
 import Data.Map ((!))
 import qualified Data.Map as M
 import Data.Time
@@ -30,35 +29,35 @@ data Event
   | Shutdown
 
 data Task = Task
-  { threadId :: ThreadId
-  , info :: Info
+  { taskThreadId :: ThreadId
+  , taskInfo :: Info
   }
 
 type TaskMap = M.Map TaskId Task
 
 data TaskManState = TaskManState
-  { nextId ::  TaskId
-  , taskMap :: TaskMap
+  { taskManStateNextId :: TaskId
+  , taskManStateTaskMap :: TaskMap
   }
 
 data TaskMan = TaskMan
-  { mainThread :: ThreadId
-  , eventM :: MVar Event
+  { taskManMainThread :: ThreadId
+  , taskManEventM :: MVar Event
   }
 
 newTaskMan :: IO TaskMan
 newTaskMan = do
   stateM <- newMVar $ TaskManState 0 M.empty
   eventM <- newEmptyMVar
-  loopThread <- forkIO $ taskManLoop stateM eventM
-  return $ TaskMan loopThread eventM
+  mainThread <- forkIO $ taskManLoop stateM eventM
+  return $ TaskMan mainThread eventM
 
 taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action idM -> modifyState (onStart action idM) stateM >>= putMVar idM
-    Kill taskId -> modifyState_ (onKill taskId) stateM
+    Start action taskIdM -> modifyTaskManState (onStart action taskIdM) stateM >>= putMVar taskIdM
+    Kill taskId -> readMVar stateM >>= onKill taskId
     GetTotalCount countM -> queryState (onGetTotalCount) stateM countM
     GetCount state countM -> queryState (onGetCount state) stateM countM
     GetInfo taskId infoM -> queryState (onGetInfo taskId) stateM infoM
@@ -70,19 +69,19 @@ taskManLoop stateM eventM = do
 queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
 queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
-modifyState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
-modifyState f stateM = do
+modifyTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
+modifyTaskManState f stateM = do
   state <- takeMVar stateM
   (state', result) <- f state
   putMVar stateM state'
   return result
 
-modifyState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
-modifyState_ f = modifyState (fmap (fmap (, ())) f)
+modifyTaskManState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
+modifyTaskManState_ f = modifyTaskManState (fmap (fmap (, ())) f)
 
 onStart :: IO () -> MVar TaskId -> TaskManState -> IO (TaskManState, TaskId)
 onStart action idM state = do
-  let taskId = nextId state
+  let taskId = taskManStateNextId state
   now <- getCurrentTime
   threadId <- forkIO action
   let initial = InitialInfo {
@@ -101,38 +100,28 @@ onStart action idM state = do
   }
   let info = Info initial current
   let task = Task threadId info
-  let taskMap' = M.insert taskId task $ taskMap state
+  let taskMap' = M.insert taskId task $ taskManStateTaskMap state
   return (TaskManState (taskId + 1) taskMap', taskId)
 
-onKill :: TaskId -> TaskManState -> IO TaskManState
-onKill taskId state = do
-  let taskMap_ = taskMap state
-  let task_ = taskMap_ ! taskId
-  let info_ = info task_
-  let current_ = current info_
-  let current' = current_ { state = Canceling }
-  let info' = info_ { current = current' }
-  let task' = task_ { info = info' }
-  let taskMap' = M.insert taskId task' taskMap_
-  let state' = state { taskMap = taskMap' }
-  killThread $ threadId task_
-  return state'
+onKill :: TaskId -> TaskManState -> IO ()
+onKill taskId taskManState =
+  killThread $ taskThreadId $ (taskManStateTaskMap taskManState) ! taskId
 
 onGetTotalCount :: TaskManState -> Int
 onGetTotalCount
   = M.size
-  . taskMap
+  . taskManStateTaskMap
 
 onGetCount :: State -> TaskManState -> Int
 onGetCount s
   = length
   . filter (==s)
-  . fmap (state . current . info . snd)
+  . fmap (state . current . taskInfo . snd)
   . M.toList
-  . taskMap
+  . taskManStateTaskMap
 
 onGetInfo :: TaskId -> TaskManState -> Maybe Info
-onGetInfo id
-  = fmap info
-  . M.lookup id
-  . taskMap
+onGetInfo taskId
+  = fmap taskInfo
+  . M.lookup taskId
+  . taskManStateTaskMap
