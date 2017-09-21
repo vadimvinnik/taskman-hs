@@ -40,23 +40,20 @@ data TaskManState = TaskManState
   , taskManStateTaskMap :: TaskMap
   }
 
-data TaskMan = TaskMan
-  { taskManMainThread :: ThreadId
-  , taskManEventM :: MVar Event
-  }
+newtype TaskMan = TaskMan { taskManEventM :: MVar Event }
 
 newTaskMan :: IO TaskMan
 newTaskMan = do
   stateM <- newMVar $ TaskManState 0 M.empty
   eventM <- newEmptyMVar
-  mainThread <- forkIO $ taskManLoop stateM eventM
-  return $ TaskMan mainThread eventM
+  _ <- forkIO $ taskManLoop stateM eventM
+  return $ TaskMan eventM
 
 taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action taskIdM -> modifyTaskManState (onStart action taskIdM) stateM >>= putMVar taskIdM
+    Start action taskIdM -> modifyTaskManState (onStart action) stateM >>= putMVar taskIdM
     Kill taskId -> readMVar stateM >>= onKill taskId
     GetTotalCount countM -> queryState (onGetTotalCount) stateM countM
     GetCount state countM -> queryState (onGetCount state) stateM countM
@@ -79,8 +76,8 @@ modifyTaskManState f stateM = do
 modifyTaskManState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
 modifyTaskManState_ f = modifyTaskManState (fmap (fmap (, ())) f)
 
-onStart :: IO () -> MVar TaskId -> TaskManState -> IO (TaskManState, TaskId)
-onStart action idM state = do
+onStart :: IO () -> TaskManState -> IO (TaskManState, TaskId)
+onStart action state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
   threadId <- forkIO action
