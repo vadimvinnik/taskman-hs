@@ -19,10 +19,10 @@ source-repository head
   location:  https://github.com/vadimvinnik/taskman-hs
 
 library
-  build-depends:
-                    base == 4.*,
-                    containers,
-                    composition >= 1.0.2.1
+  build-depends: base == 4.*
+               , containers
+               , composition >= 1.0.2.1
+               , time >= 1.5.0.0
   hs-source-dirs:   src/
   ghc-options:      -Wall
   exposed-modules:  Control.Concurrent.TaskMan
