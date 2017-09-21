@@ -1,0 +1,29 @@
+name:            taskman-hs
+version:         0.1
+cabal-version:   >=1.8
+build-type:      Simple
+author:          Vadim Vinnik <vadim.vinnik@gmail.com>
+maintainer:      Vadim Vinnik <vadim.vinnik@gmail.com>
+synopsis:        Framework for managing concurrent tasks
+homepage:        https://github.com/vadimvinnik/taskman-hs
+category:        Concurrent
+copyright:       Vadim Vinnik, 2017
+license:         MIT
+license-file:    LICENSE
+description:
+    The framework allows to start, monitor progress, cancel and get info from
+    long-running tasks.
+
+source-repository head
+  type:      Git
+  location:  https://github.com/vadimvinnik/taskman-hs
+
+library
+  build-depends:
+                    base == 4.*,
+                    containers,
+                    composition >= 1.0.2.1
+  hs-source-dirs:   src/
+  ghc-options:      -Wall
+  exposed-modules:  Control.Concurrent.TaskMan
+
