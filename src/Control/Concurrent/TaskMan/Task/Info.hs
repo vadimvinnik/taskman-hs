@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module TaskMan.Task.Info where
+module Control.Concurrent.TaskMan.Task.Info where
 
 import Data.Time
 

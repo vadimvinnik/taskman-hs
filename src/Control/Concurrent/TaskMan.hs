@@ -1,6 +1,6 @@
 {-# LANGUAGE TupleSections #-}
 
-module TaskMan where
+module Control.Concurrent.TaskMan where
 
 import Control.Concurrent
 import Control.Monad
