@@ -53,12 +53,12 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action taskIdM -> modifyTaskManState (onStart action) stateM >>= putMVar taskIdM
-    Kill taskId -> readMVar stateM >>= onKill taskId
-    GetTotalCount countM -> queryState (onGetTotalCount) stateM countM
-    GetCount state countM -> queryState (onGetCount state) stateM countM
-    GetInfo taskId infoM -> queryState (onGetInfo taskId) stateM infoM
-    _ -> undefined
+    Start action taskIdM  -> onStart action stateM taskIdM
+    Kill taskId           -> onKill taskId stateM
+    GetTotalCount countM  -> queryState onGetTotalCountHelper stateM countM
+    GetCount state countM -> queryState (onGetCountHelper state) stateM countM
+    GetInfo taskId infoM  -> queryState (onGetInfoHelper taskId) stateM infoM
+    _                     -> undefined -- tmp. until all events are implemented
   case event of
     Shutdown -> return ()
     _ -> taskManLoop stateM eventM
@@ -76,8 +76,12 @@ modifyTaskManState f stateM = do
 modifyTaskManState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
 modifyTaskManState_ f = modifyTaskManState (fmap (fmap (, ())) f)
 
-onStart :: IO () -> TaskManState -> IO (TaskManState, TaskId)
-onStart action state = do
+onStart action stateM taskIdM = do
+  taskId <- modifyTaskManState (onStartHelper action) stateM
+  putMVar taskIdM taskId
+
+onStartHelper :: IO () -> TaskManState -> IO (TaskManState, TaskId)
+onStartHelper action state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
   threadId <- forkIO action
@@ -100,25 +104,26 @@ onStart action state = do
   let taskMap' = M.insert taskId task $ taskManStateTaskMap state
   return (TaskManState (taskId + 1) taskMap', taskId)
 
-onKill :: TaskId -> TaskManState -> IO ()
-onKill taskId taskManState =
-  killThread $ taskThreadId $ (taskManStateTaskMap taskManState) ! taskId
+onKill taskId stateM = do
+  taskManState <- readMVar stateM
+  let task = (taskManStateTaskMap taskManState) ! taskId
+  killThread $ taskThreadId task
 
-onGetTotalCount :: TaskManState -> Int
-onGetTotalCount
+onGetTotalCountHelper :: TaskManState -> Int
+onGetTotalCountHelper
   = M.size
   . taskManStateTaskMap
 
-onGetCount :: State -> TaskManState -> Int
-onGetCount s
+onGetCountHelper :: State -> TaskManState -> Int
+onGetCountHelper s
   = length
   . filter (==s)
   . fmap (state . current . taskInfo . snd)
   . M.toList
   . taskManStateTaskMap
 
-onGetInfo :: TaskId -> TaskManState -> Maybe Info
-onGetInfo taskId
+onGetInfoHelper :: TaskId -> TaskManState -> Maybe Info
+onGetInfoHelper taskId
   = fmap taskInfo
   . M.lookup taskId
   . taskManStateTaskMap
