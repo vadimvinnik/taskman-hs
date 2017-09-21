@@ -53,35 +53,39 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action taskIdM  -> onStart action stateM taskIdM
+    Start action taskIdM  -> putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
     Kill taskId           -> onKill taskId stateM
-    GetTotalCount countM  -> queryState onGetTotalCountHelper stateM countM
-    GetCount state countM -> queryState (onGetCountHelper state) stateM countM
-    GetInfo taskId infoM  -> queryState (onGetInfoHelper taskId) stateM infoM
+    GetTotalCount countM  -> queryState getTotalCountHelper stateM countM
+    GetCount state countM -> queryState (getCountHelper state) stateM countM
+    GetInfo taskId infoM  -> queryState (getInfoHelper taskId) stateM infoM
+    Shutdown              -> return () -- remove together with the next line
     _                     -> undefined -- tmp. until all events are implemented
   case event of
     Shutdown -> return ()
     _ -> taskManLoop stateM eventM
 
-queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
-queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
-
-modifyTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
-modifyTaskManState f stateM = do
+getModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
+getModifyingTaskManState f stateM = do
   state <- takeMVar stateM
   (state', result) <- f state
   putMVar stateM state'
   return result
 
-modifyTaskManState_ :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
-modifyTaskManState_ f = modifyTaskManState (fmap (fmap (, ())) f)
+putModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> MVar a -> IO ()
+putModifyingTaskManState f stateM resultM = do
+  result <- getModifyingTaskManState f stateM
+  putMVar resultM result
 
-onStart action stateM taskIdM = do
-  taskId <- modifyTaskManState (onStartHelper action) stateM
-  putMVar taskIdM taskId
+modifyTaskManState :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
+modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 
-onStartHelper :: IO () -> TaskManState -> IO (TaskManState, TaskId)
-onStartHelper action state = do
+queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
+queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
+
+onStart action stateM taskIdM = putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
+
+startTaskAndGetId :: IO () -> TaskManState -> IO (TaskManState, TaskId)
+startTaskAndGetId action state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
   threadId <- forkIO action
@@ -109,21 +113,21 @@ onKill taskId stateM = do
   let task = (taskManStateTaskMap taskManState) ! taskId
   killThread $ taskThreadId task
 
-onGetTotalCountHelper :: TaskManState -> Int
-onGetTotalCountHelper
+getTotalCountHelper :: TaskManState -> Int
+getTotalCountHelper
   = M.size
   . taskManStateTaskMap
 
-onGetCountHelper :: State -> TaskManState -> Int
-onGetCountHelper s
+getCountHelper :: State -> TaskManState -> Int
+getCountHelper s
   = length
   . filter (==s)
   . fmap (state . current . taskInfo . snd)
   . M.toList
   . taskManStateTaskMap
 
-onGetInfoHelper :: TaskId -> TaskManState -> Maybe Info
-onGetInfoHelper taskId
+getInfoHelper :: TaskId -> TaskManState -> Maybe Info
+getInfoHelper taskId
   = fmap taskInfo
   . M.lookup taskId
   . taskManStateTaskMap
