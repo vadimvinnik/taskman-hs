@@ -7,7 +7,7 @@ import Control.Monad
 import Data.Map ((!))
 import qualified Data.Map as M
 import Data.Time
-import TaskMan.Task.Info
+import Control.Concurrent.TaskMan.Task.Info
 
 type Action = IO ()
 
