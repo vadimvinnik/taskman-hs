@@ -18,6 +18,7 @@ data Event
   | GetTotalCount (MVar Int)
   | GetCount Status (MVar Int)
   | GetInfo TaskId (MVar (Maybe Info))
+  | ReportDone TaskId
   | ReportStatus TaskId Status
   | ReportPhase TaskId String
 
@@ -46,11 +47,12 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    ControlStart action taskIdM  -> putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
+    ControlStart action taskIdM  -> onStart action eventM stateM taskIdM
     ControlKill taskId           -> onKill taskId stateM
     GetTotalCount countM  -> queryState getTotalCountHelper stateM countM
     GetCount state countM -> queryState (getCountHelper state) stateM countM
     GetInfo taskId infoM  -> queryState (getInfoHelper taskId) stateM infoM
+    ReportDone taskId -> onDone taskId stateM
     _              -> return () -- tmp. until all events are implemented
   case event of
     ControlShutdown -> return ()
@@ -74,14 +76,15 @@ modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
 queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
-onStart :: IO () -> MVar TaskManState -> MVar TaskId -> IO ()
-onStart action stateM taskIdM = putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
+onStart :: IO () -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
+onStart action eventM stateM taskIdM =
+  putModifyingTaskManState (startTaskAndGetId action eventM) stateM taskIdM
 
-startTaskAndGetId :: IO () -> TaskManState -> IO (TaskManState, TaskId)
-startTaskAndGetId action state = do
+startTaskAndGetId :: IO () -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
+startTaskAndGetId action eventM state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
-  threadId <- forkIO action
+  threadId <- forkIO $ wrapTask action taskId eventM
   let initial = Initial {
     initialTaskId = taskId,
     initialTitle = "Task #" ++ show taskId,
@@ -100,6 +103,11 @@ startTaskAndGetId action state = do
   let task = Task threadId info
   let taskMap' = M.insert taskId task $ taskManStateTaskMap state
   return (TaskManState (taskId + 1) taskMap', taskId)
+
+wrapTask :: IO () -> TaskId -> MVar Event -> IO ()
+wrapTask action taskId eventM = do
+  action
+  putMVar eventM $ ReportDone taskId
 
 onKill :: TaskId -> MVar TaskManState -> IO ()
 onKill taskId stateM = do
@@ -125,3 +133,6 @@ getInfoHelper taskId
   = fmap taskInfo
   . M.lookup taskId
   . taskManStateTaskMap
+
+onDone :: TaskId -> MVar TaskManState -> IO ()
+onDone taskId stateM = undefined
