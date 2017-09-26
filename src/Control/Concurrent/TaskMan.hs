@@ -14,7 +14,6 @@ type Action = IO ()
 data Event
   = ControlStart Action (MVar TaskId)
   | ControlCancel TaskId
-  | ControlKill TaskId
   | ControlShutdown
   | GetTotalCount (MVar Int)
   | GetStatusCount Status (MVar Int)
@@ -50,11 +49,13 @@ taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
     ControlStart action taskIdM  -> onStart action eventM stateM taskIdM
-    ControlKill taskId           -> onKill taskId stateM
+    ControlCancel taskId         -> onCancel taskId stateM
     GetTotalCount countM         -> onGetTotalCount stateM countM
-    GetStatusCount status countM        -> onGetCount status stateM countM
+    GetStatusCount status countM -> onGetCount status stateM countM
     GetInfo taskId infoM         -> onGetInfo taskId stateM infoM
     ReportDone taskId            -> onDone taskId stateM
+    ReportCanceled taskId        -> onCanceled taskId stateM
+    ReportFailure taskId msg     -> onFailure taskId msg stateM
     _-> return () -- tmp. until all events are implemented
   case event of
     ControlShutdown -> return ()
@@ -115,8 +116,8 @@ wrapTask action taskId eventM =
     handleFailure e = signal $ (flip ReportFailure) (displayException e)
     signal event = putMVar eventM $ event taskId
 
-onKill :: TaskId -> MVar TaskManState -> IO ()
-onKill taskId stateM = do
+onCancel :: TaskId -> MVar TaskManState -> IO ()
+onCancel taskId stateM = do
   taskManState <- readMVar stateM
   let task = (taskManStateTaskMap taskManState) ! taskId
   killThread $ taskThreadId task
@@ -144,4 +145,29 @@ onGetInfo taskId stateM infoM = queryState worker stateM infoM where
     . taskManStateTaskMap
 
 onDone :: TaskId -> MVar TaskManState -> IO ()
-onDone taskId stateM = undefined
+onDone taskId stateM = modifyTaskManState (setFinalStatus taskId Done "Done") stateM
+
+onCanceled :: TaskId -> MVar TaskManState -> IO ()
+onCanceled taskId stateM = modifyTaskManState (setFinalStatus taskId Canceled "Canceled") stateM
+
+onFailure :: TaskId -> String -> MVar TaskManState -> IO ()
+onFailure taskId msg stateM = modifyTaskManState (setFinalStatus taskId Canceled msg) stateM
+
+setFinalStatus :: TaskId -> Status -> String -> TaskManState -> IO TaskManState
+setFinalStatus taskId status msg state = do
+  now <- getCurrentTime
+  let taskMap = taskManStateTaskMap state
+  let task = taskMap ! taskId
+  let info = taskInfo task
+  let current = infoCurrent info
+  let current' = current {
+    currentStatus = status,
+    currentPhase = msg,
+    currentEnded = Just now
+  }
+  let info' = info { infoCurrent = current' }
+  let task' = task { taskInfo = info' }
+  let taskMap' = M.insert taskId task' taskMap
+  let state' = state { taskManStateTaskMap = taskMap' }
+  return state'
+

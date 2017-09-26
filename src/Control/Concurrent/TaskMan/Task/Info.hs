@@ -8,17 +8,10 @@ type TaskId = Int
 
 data Status
   = InProgress
-  | Pause
-  | Waiting
-  | Canceling
-  | Failure
-  | Canceled
-  | Killed
   | Done
-  deriving (Show, Eq)
-
-finalStatuses :: [Status]
-finalStatuses = [Done, Killed, Canceled, Failure]
+  | Canceled
+  | Failure
+  deriving (Show, Eq, Ord)
 
 -- Properties that are set once when the task is started and never change.
 data Initial = Initial
@@ -44,7 +37,7 @@ data Info = Info
   } deriving (Show)
 
 isFinalStatus :: Status -> Bool
-isFinalStatus s = s `elem` finalStatuses
+isFinalStatus = (>= Done)
 
 percentDone :: Current -> Maybe Float
 percentDone Current{..} =
