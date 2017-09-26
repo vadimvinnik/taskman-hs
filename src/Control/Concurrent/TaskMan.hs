@@ -79,11 +79,11 @@ modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
 queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
-onStart :: IO () -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
+onStart :: Action -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
 onStart action eventM stateM taskIdM =
   putModifyingTaskManState (startTaskAndGetId action eventM) stateM taskIdM
 
-startTaskAndGetId :: IO () -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
+startTaskAndGetId :: Action -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
 startTaskAndGetId action eventM state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
@@ -108,7 +108,7 @@ startTaskAndGetId action eventM state = do
   return (TaskManState (taskId + 1) taskMap', taskId)
 
 -- todo: does it really catch ThreadKilled?
-wrapTask :: IO () -> TaskId -> MVar Event -> IO ()
+wrapTask :: Action -> TaskId -> MVar Event -> IO ()
 wrapTask action taskId eventM =
   catches (action >> signalDone) (map Handler [handleCanceled, handleFailure]) where
     signalDone = signal ReportDone
