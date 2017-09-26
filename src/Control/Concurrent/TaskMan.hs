@@ -16,7 +16,7 @@ data Event
   | ControlKill TaskId
   | ControlShutdown
   | GetTotalCount (MVar Int)
-  | GetCount Status (MVar Int)
+  | GetStatusCount Status (MVar Int)
   | GetInfo TaskId (MVar (Maybe Info))
   | ReportDone TaskId
   | ReportStatus TaskId Status
@@ -49,11 +49,11 @@ taskManLoop stateM eventM = do
   case event of
     ControlStart action taskIdM  -> onStart action eventM stateM taskIdM
     ControlKill taskId           -> onKill taskId stateM
-    GetTotalCount countM  -> queryState getTotalCountHelper stateM countM
-    GetCount state countM -> queryState (getCountHelper state) stateM countM
-    GetInfo taskId infoM  -> queryState (getInfoHelper taskId) stateM infoM
-    ReportDone taskId -> onDone taskId stateM
-    _              -> return () -- tmp. until all events are implemented
+    GetTotalCount countM         -> onGetTotalCount stateM countM
+    GetStatusCount status countM        -> onGetCount status stateM countM
+    GetInfo taskId infoM         -> onGetInfo taskId stateM infoM
+    ReportDone taskId            -> onDone taskId stateM
+    _-> return () -- tmp. until all events are implemented
   case event of
     ControlShutdown -> return ()
     _ -> taskManLoop stateM eventM
@@ -115,24 +115,27 @@ onKill taskId stateM = do
   let task = (taskManStateTaskMap taskManState) ! taskId
   killThread $ taskThreadId task
 
-getTotalCountHelper :: TaskManState -> Int
-getTotalCountHelper
-  = M.size
-  . taskManStateTaskMap
+onGetTotalCount :: MVar TaskManState -> MVar Int -> IO ()
+onGetTotalCount stateM countM = queryState worker stateM countM where
+  worker
+    = M.size
+    . taskManStateTaskMap
 
-getCountHelper :: Status -> TaskManState -> Int
-getCountHelper s
-  = length
-  . filter (==s)
-  . fmap (currentStatus . infoCurrent . taskInfo . snd)
-  . M.toList
-  . taskManStateTaskMap
+onGetCount :: Status -> MVar TaskManState -> MVar Int -> IO ()
+onGetCount s stateM countM = queryState worker stateM countM where
+  worker
+    = length
+    . filter (==s)
+    . fmap (currentStatus . infoCurrent . taskInfo . snd)
+    . M.toList
+    . taskManStateTaskMap
 
-getInfoHelper :: TaskId -> TaskManState -> Maybe Info
-getInfoHelper taskId
-  = fmap taskInfo
-  . M.lookup taskId
-  . taskManStateTaskMap
+onGetInfo :: TaskId -> MVar TaskManState -> MVar (Maybe Info) -> IO ()
+onGetInfo taskId stateM infoM = queryState worker stateM infoM where
+  worker
+    = fmap taskInfo
+    . M.lookup taskId
+    . taskManStateTaskMap
 
 onDone :: TaskId -> MVar TaskManState -> IO ()
 onDone taskId stateM = undefined
