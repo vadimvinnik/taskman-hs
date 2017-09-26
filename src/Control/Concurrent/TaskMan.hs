@@ -44,6 +44,24 @@ newTaskMan = do
   _ <- forkIO $ taskManLoop stateM eventM
   return $ TaskMan eventM
 
+start :: TaskMan -> Action -> IO TaskId
+start = undefined
+
+cancel :: TaskMan -> TaskId -> IO ()
+cancel = undefined
+
+shutdown :: TaskMan -> IO ()
+shutdown = undefined
+
+getTotalCount :: TaskMan -> IO Int
+getTotalCount = undefined
+
+getStatusCount :: TaskMan -> Status -> IO Int
+getStatusCount = undefined
+
+getInfo :: TaskMan -> TaskId -> IO (Maybe Info)
+getInfo = undefined
+
 taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
