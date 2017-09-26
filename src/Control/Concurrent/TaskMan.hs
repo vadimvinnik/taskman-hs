@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, ScopedTypeVariables #-}
 
 module Control.Concurrent.TaskMan where
 
@@ -7,6 +7,7 @@ import Data.Map ((!))
 import qualified Data.Map as M
 import Data.Time
 import Control.Concurrent.TaskMan.Task.Info
+import Control.Exception
 
 type Action = IO ()
 
@@ -19,7 +20,8 @@ data Event
   | GetStatusCount Status (MVar Int)
   | GetInfo TaskId (MVar (Maybe Info))
   | ReportDone TaskId
-  | ReportStatus TaskId Status
+  | ReportCanceled TaskId
+  | ReportFailure TaskId String
   | ReportPhase TaskId String
 
 data Task = Task
@@ -104,10 +106,14 @@ startTaskAndGetId action eventM state = do
   let taskMap' = M.insert taskId task $ taskManStateTaskMap state
   return (TaskManState (taskId + 1) taskMap', taskId)
 
+-- todo: does it really catch ThreadKilled?
 wrapTask :: IO () -> TaskId -> MVar Event -> IO ()
-wrapTask action taskId eventM = do
-  action
-  putMVar eventM $ ReportDone taskId
+wrapTask action taskId eventM =
+  catches (action >> signalDone) (map Handler [handleCanceled, handleFailure]) where
+    signalDone = signal ReportDone
+    handleCanceled e = if e == ThreadKilled then signal ReportCanceled else throw e
+    handleFailure e = signal $ (flip ReportFailure) (displayException e)
+    signal event = putMVar eventM $ event taskId
 
 onKill :: TaskId -> MVar TaskManState -> IO ()
 onKill taskId stateM = do
