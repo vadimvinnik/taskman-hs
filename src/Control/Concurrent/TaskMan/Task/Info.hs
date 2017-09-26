@@ -6,50 +6,48 @@ import Data.Time
 
 type TaskId = Int
 
-data State
-  = Running
-  | Paused
+data Status
+  = InProgress
+  | Pause
   | Waiting
   | Canceling
-  | Failed
+  | Failure
   | Canceled
   | Killed
-  | Finished
+  | Done
   deriving (Show, Eq)
 
-finals :: [State]
-finals = [Finished, Failed, Canceled, Killed]
+finalStatuses :: [Status]
+finalStatuses = [Done, Killed, Canceled, Failure]
 
 -- Properties that are set once when the task is started and never change.
-data InitialInfo = InitialInfo
-  { taskId :: TaskId
-  , title :: String
-  , started :: UTCTime
-  , parent :: Maybe TaskId
+data Initial = Initial
+  { initialTaskId :: TaskId
+  , initialTitle :: String
+  , initialStarted :: UTCTime
+  , initialParent :: Maybe TaskId
   } deriving (Show)
 
 -- Properties that change while the task is running
-data CurrentInfo = CurrentInfo
-  { state :: State
-  , phase :: String
-  , ended :: Maybe UTCTime
-  , children :: [Info]
-  , totalWork :: Maybe Int
-  , doneWork :: Int
+data Current = Current
+  { currentStatus :: Status
+  , currentPhase :: String
+  , currentEnded :: Maybe UTCTime
+  , currentChildren :: [Info]
+  , currentTotalWork :: Maybe Int
+  , currentDoneWork :: Int
   } deriving (Show)
 
 data Info = Info
-  { initial :: InitialInfo
-  , current :: CurrentInfo
+  { infoInitial :: Initial
+  , infoCurrent :: Current
   } deriving (Show)
 
-isFinal :: State -> Bool
-isFinal s = s `elem` finals
+isFinalStatus :: Status -> Bool
+isFinalStatus s = s `elem` finalStatuses
 
-isFinished :: Info -> Bool
-isFinished = isFinal . state . current
-
--- todo: if finished then 100%
-percentDone :: Info -> Maybe Float
-percentDone i =
-  fmap (\x -> (fromIntegral $ doneWork $ current i) / (fromIntegral x)) $ totalWork $ current i
+percentDone :: Current -> Maybe Float
+percentDone Current{..} =
+  if currentStatus == Done
+     then Just 100.0
+     else fmap (((fromIntegral currentDoneWork) /) . fromIntegral) currentTotalWork

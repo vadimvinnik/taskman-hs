@@ -11,22 +11,15 @@ import Control.Concurrent.TaskMan.Task.Info
 type Action = IO ()
 
 data Event
-  -- Controlling tasks
-  = Start Action (MVar TaskId)
-  | Pause TaskId
-  | Resume TaskId
-  | Cancel TaskId
-  | Kill TaskId
-  -- Queries
+  = ControlStart Action (MVar TaskId)
+  | ControlCancel TaskId
+  | ControlKill TaskId
+  | ControlShutdown
   | GetTotalCount (MVar Int)
-  | GetCount State (MVar Int)
+  | GetCount Status (MVar Int)
   | GetInfo TaskId (MVar (Maybe Info))
-  -- Feedback frorm the tasks
-  | Finished (TaskId)
-  | Failed (TaskId)
-  | Canceled (TaskId)
-  -- Global control
-  | Shutdown
+  | ReportStatus TaskId Status
+  | ReportPhase TaskId String
 
 data Task = Task
   { taskThreadId :: ThreadId
@@ -53,15 +46,14 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start action taskIdM  -> putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
-    Kill taskId           -> onKill taskId stateM
+    ControlStart action taskIdM  -> putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
+    ControlKill taskId           -> onKill taskId stateM
     GetTotalCount countM  -> queryState getTotalCountHelper stateM countM
     GetCount state countM -> queryState (getCountHelper state) stateM countM
     GetInfo taskId infoM  -> queryState (getInfoHelper taskId) stateM infoM
-    Shutdown              -> return () -- remove together with the next line
-    _                     -> undefined -- tmp. until all events are implemented
+    _              -> return () -- tmp. until all events are implemented
   case event of
-    Shutdown -> return ()
+    ControlShutdown -> return ()
     _ -> taskManLoop stateM eventM
 
 getModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
@@ -89,19 +81,19 @@ startTaskAndGetId action state = do
   let taskId = taskManStateNextId state
   now <- getCurrentTime
   threadId <- forkIO action
-  let initial = InitialInfo {
-    taskId = taskId,
-    title = "Task #" ++ show taskId,
-    started = now,
-    parent = Nothing
+  let initial = Initial {
+    initialTaskId = taskId,
+    initialTitle = "Task #" ++ show taskId,
+    initialStarted = now,
+    initialParent = Nothing
   }
-  let current = CurrentInfo {
-    state = Running,
-    phase = "",
-    ended = Nothing,
-    children = [],
-    totalWork = Nothing,
-    doneWork = 0
+  let current = Current {
+    currentStatus = InProgress,
+    currentPhase = "",
+    currentEnded = Nothing,
+    currentChildren = [],
+    currentTotalWork = Nothing,
+    currentDoneWork = 0
   }
   let info = Info initial current
   let task = Task threadId info
@@ -118,11 +110,11 @@ getTotalCountHelper
   = M.size
   . taskManStateTaskMap
 
-getCountHelper :: State -> TaskManState -> Int
+getCountHelper :: Status -> TaskManState -> Int
 getCountHelper s
   = length
   . filter (==s)
-  . fmap (state . current . taskInfo . snd)
+  . fmap (currentStatus . infoCurrent . taskInfo . snd)
   . M.toList
   . taskManStateTaskMap
 
