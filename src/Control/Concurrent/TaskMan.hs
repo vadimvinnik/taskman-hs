@@ -74,6 +74,7 @@ modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
 queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
+onStart :: IO () -> MVar TaskManState -> MVar TaskId -> IO ()
 onStart action stateM taskIdM = putModifyingTaskManState (startTaskAndGetId action) stateM taskIdM
 
 startTaskAndGetId :: IO () -> TaskManState -> IO (TaskManState, TaskId)
@@ -100,6 +101,7 @@ startTaskAndGetId action state = do
   let taskMap' = M.insert taskId task $ taskManStateTaskMap state
   return (TaskManState (taskId + 1) taskMap', taskId)
 
+onKill :: TaskId -> MVar TaskManState -> IO ()
 onKill taskId stateM = do
   taskManState <- readMVar stateM
   let task = (taskManStateTaskMap taskManState) ! taskId
