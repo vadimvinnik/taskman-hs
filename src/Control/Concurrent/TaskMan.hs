@@ -67,7 +67,11 @@ getTotalCount (TaskMan eventM) = do
   takeMVar countM
 
 getStatusCount :: TaskMan -> Status -> IO Int
-getStatusCount = undefined
+getStatusCount (TaskMan eventM) status = do
+  countM <- newEmptyMVar
+  putMVar eventM $ GetStatusCount status countM
+  takeMVar countM
+
 
 getInfo :: TaskMan -> TaskId -> IO (Maybe Info)
 getInfo = undefined
