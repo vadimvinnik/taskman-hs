@@ -57,7 +57,8 @@ cancel (TaskMan eventM) taskId =
   putMVar eventM $ ControlCancel taskId
 
 shutdown :: TaskMan -> IO ()
-shutdown = undefined
+shutdown (TaskMan eventM) =
+  putMVar eventM $ ControlShutdown
 
 getTotalCount :: TaskMan -> IO Int
 getTotalCount = undefined
