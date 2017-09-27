@@ -1,8 +1,9 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards, TemplateHaskell #-}
 
 module Control.Concurrent.TaskMan.Task.Info where
 
 import Data.Time
+import Control.Lens
 
 type TaskId = Int
 
@@ -15,32 +16,36 @@ data Status
 
 -- Properties that are set once when the task is started and never change.
 data Initial = Initial
-  { initialTaskId :: TaskId
-  , initialTitle :: String
-  , initialStarted :: UTCTime
-  , initialParent :: Maybe TaskId
+  { _initialTaskId :: TaskId
+  , _initialTitle :: String
+  , _initialStarted :: UTCTime
+  , _initialParent :: Maybe TaskId
   } deriving (Show)
 
 -- Properties that change while the task is running
 data Current = Current
-  { currentStatus :: Status
-  , currentPhase :: String
-  , currentEnded :: Maybe UTCTime
-  , currentChildren :: [Info]
-  , currentTotalWork :: Maybe Int
-  , currentDoneWork :: Int
+  { _currentStatus :: Status
+  , _currentPhase :: String
+  , _currentEnded :: Maybe UTCTime
+  , _currentChildren :: [Info]
+  , _currentTotalWork :: Maybe Int
+  , _currentDoneWork :: Int
   } deriving (Show)
 
 data Info = Info
-  { infoInitial :: Initial
-  , infoCurrent :: Current
+  { _infoInitial :: Initial
+  , _infoCurrent :: Current
   } deriving (Show)
+
+makeLenses ''Initial
+makeLenses ''Current
+makeLenses ''Info
 
 isFinalStatus :: Status -> Bool
 isFinalStatus = (>= Done)
 
 percentDone :: Current -> Maybe Float
 percentDone Current{..} =
-  if currentStatus == Done
+  if _currentStatus == Done
      then Just 100.0
-     else fmap (((fromIntegral currentDoneWork) /) . fromIntegral) currentTotalWork
+     else fmap (((fromIntegral _currentDoneWork) /) . fromIntegral) _currentTotalWork

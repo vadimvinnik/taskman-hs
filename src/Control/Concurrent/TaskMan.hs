@@ -1,4 +1,7 @@
-{-# LANGUAGE TupleSections, ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections,
+             ScopedTypeVariables,
+             TemplateHaskell
+ #-}
 
 module Control.Concurrent.TaskMan where
 
@@ -8,6 +11,7 @@ import qualified Data.Map as M
 import Data.Time
 import Control.Concurrent.TaskMan.Task.Info
 import Control.Exception
+import Control.Lens
 
 type Action = IO ()
 
@@ -26,16 +30,19 @@ data Event
   | ReportPhase TaskId String
 
 data Task = Task
-  { taskThreadId :: ThreadId
-  , taskInfo :: Info
+  { _taskThreadId :: ThreadId
+  , _taskInfo :: Info
   }
 
 type TaskMap = M.Map TaskId Task
 
 data TaskManState = TaskManState
-  { taskManStateNextId :: TaskId
-  , taskManStateTaskMap :: TaskMap
+  { _taskManStateNextId :: TaskId
+  , _taskManStateTaskMap :: TaskMap
   }
+
+makeLenses ''Task
+makeLenses ''TaskManState
 
 newtype TaskMan = TaskMan { taskManEventM :: MVar Event }
 
@@ -119,27 +126,28 @@ onStart action eventM stateM taskIdM =
 
 startTaskAndGetId :: Action -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
 startTaskAndGetId action eventM state = do
-  let taskId = taskManStateNextId state
+  let taskId = state^.taskManStateNextId
   now <- getCurrentTime
   threadId <- forkIO $ wrapTask action taskId eventM
   let initial = Initial {
-    initialTaskId = taskId,
-    initialTitle = "Task #" ++ show taskId,
-    initialStarted = now,
-    initialParent = Nothing
+    _initialTaskId = taskId,
+    _initialTitle = "Task #" ++ show taskId,
+    _initialStarted = now,
+    _initialParent = Nothing
   }
   let current = Current {
-    currentStatus = InProgress,
-    currentPhase = "",
-    currentEnded = Nothing,
-    currentChildren = [],
-    currentTotalWork = Nothing,
-    currentDoneWork = 0
+    _currentStatus = InProgress,
+    _currentPhase = "",
+    _currentEnded = Nothing,
+    _currentChildren = [],
+    _currentTotalWork = Nothing,
+    _currentDoneWork = 0
   }
-  let info = Info initial current
-  let task = Task threadId info
-  let taskMap' = M.insert taskId task $ taskManStateTaskMap state
-  return (TaskManState (taskId + 1) taskMap', taskId)
+  let task = Task threadId (Info initial current)
+  let state' = state
+        & taskManStateNextId +~ 1
+        & taskManStateTaskMap %~ (M.insert taskId task)
+  return (state', taskId)
 
 -- todo: does it really catch ThreadKilled?
 wrapTask :: Action -> TaskId -> MVar Event -> IO ()
@@ -153,25 +161,25 @@ wrapTask action taskId eventM =
 onCancel :: TaskId -> MVar TaskManState -> IO ()
 onCancel taskId stateM = do
   taskManState <- readMVar stateM
-  let task = (taskManStateTaskMap taskManState) ! taskId
-  killThread $ taskThreadId task
+  let task = (taskManState^.taskManStateTaskMap) ! taskId
+  killThread $ task^.taskThreadId
 
 onGetTotalCount :: MVar TaskManState -> MVar Int -> IO ()
 onGetTotalCount stateM countM = queryState worker stateM countM where
   worker
     = M.size
-    . taskManStateTaskMap
+    . view taskManStateTaskMap
 
 onGetCount :: Status -> MVar TaskManState -> MVar Int -> IO ()
 onGetCount s stateM countM = queryState worker stateM countM where
-  worker = length . (getFilteredInfosFromTaskManState $ (s==) . currentStatus . infoCurrent)
+  worker = length . (getFilteredInfosFromTaskManState $ (s==) . (view $ infoCurrent.currentStatus))
 
 onGetInfo :: TaskId -> MVar TaskManState -> MVar (Maybe Info) -> IO ()
 onGetInfo taskId stateM infoM = queryState worker stateM infoM where
   worker
-    = fmap taskInfo
+    = fmap (view taskInfo)
     . M.lookup taskId
-    . taskManStateTaskMap
+    . view taskManStateTaskMap
 
 onGetAllInfos :: MVar TaskManState -> MVar [Info] -> IO ()
 onGetAllInfos stateM infosM = queryState (getFilteredInfosFromTaskManState $ const True) stateM infosM
@@ -182,9 +190,9 @@ onGetFilteredInfos p stateM infosM = queryState (getFilteredInfosFromTaskManStat
 getFilteredInfosFromTaskManState :: (Info -> Bool) -> TaskManState -> [Info]
 getFilteredInfosFromTaskManState p
   = filter p
-  . fmap (taskInfo . snd)
+  . fmap ((view taskInfo) . snd)
   . M.toList
-  . taskManStateTaskMap
+  . view taskManStateTaskMap
 
 onDone :: TaskId -> MVar TaskManState -> IO ()
 onDone taskId stateM = modifyTaskManState (setFinalStatus taskId Done "Done") stateM
@@ -198,18 +206,10 @@ onFailure taskId msg stateM = modifyTaskManState (setFinalStatus taskId Canceled
 setFinalStatus :: TaskId -> Status -> String -> TaskManState -> IO TaskManState
 setFinalStatus taskId status msg state = do
   now <- getCurrentTime
-  let taskMap = taskManStateTaskMap state
-  let task = taskMap ! taskId
-  let info = taskInfo task
-  let current = infoCurrent info
-  let current' = current {
-    currentStatus = status,
-    currentPhase = msg,
-    currentEnded = Just now
-  }
-  let info' = info { infoCurrent = current' }
-  let task' = task { taskInfo = info' }
-  let taskMap' = M.insert taskId task' taskMap
-  let state' = state { taskManStateTaskMap = taskMap' }
-  return state'
+  let updateCurrent current = current
+        & currentStatus .~ status
+        & currentPhase .~ msg
+        & currentEnded .~ Just now
+  let updateTask task = task & taskInfo.infoCurrent %~ updateCurrent
+  return $ state & taskManStateTaskMap %~ M.update (Just . updateTask) taskId
 
