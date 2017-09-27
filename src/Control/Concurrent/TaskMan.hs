@@ -47,7 +47,10 @@ newTaskMan = do
   return $ TaskMan eventM
 
 start :: TaskMan -> Action -> IO TaskId
-start = undefined
+start (TaskMan eventM) action = do
+  taskIdM <- newEmptyMVar
+  putMVar eventM $ ControlStart action taskIdM
+  takeMVar taskIdM
 
 cancel :: TaskMan -> TaskId -> IO ()
 cancel = undefined
