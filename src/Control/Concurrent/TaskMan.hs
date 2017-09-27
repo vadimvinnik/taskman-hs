@@ -18,6 +18,8 @@ data Event
   | GetTotalCount (MVar Int)
   | GetStatusCount Status (MVar Int)
   | GetInfo TaskId (MVar (Maybe Info))
+  | GetAllInfos (MVar [Info])
+  | GetFilteredInfos (Info -> Bool) (MVar [Info])
   | ReportDone TaskId
   | ReportCanceled TaskId
   | ReportFailure TaskId String
@@ -71,6 +73,8 @@ taskManLoop stateM eventM = do
     GetTotalCount countM         -> onGetTotalCount stateM countM
     GetStatusCount status countM -> onGetCount status stateM countM
     GetInfo taskId infoM         -> onGetInfo taskId stateM infoM
+    GetAllInfos infosM           -> onGetAllInfos stateM infosM
+    GetFilteredInfos p infosM    -> onGetFilteredInfos p stateM infosM
     ReportDone taskId            -> onDone taskId stateM
     ReportCanceled taskId        -> onCanceled taskId stateM
     ReportFailure taskId msg     -> onFailure taskId msg stateM
@@ -148,12 +152,7 @@ onGetTotalCount stateM countM = queryState worker stateM countM where
 
 onGetCount :: Status -> MVar TaskManState -> MVar Int -> IO ()
 onGetCount s stateM countM = queryState worker stateM countM where
-  worker
-    = length
-    . filter (==s)
-    . fmap (currentStatus . infoCurrent . taskInfo . snd)
-    . M.toList
-    . taskManStateTaskMap
+  worker = length . (getFilteredTaskInfos $ (s==) . currentStatus . infoCurrent)
 
 onGetInfo :: TaskId -> MVar TaskManState -> MVar (Maybe Info) -> IO ()
 onGetInfo taskId stateM infoM = queryState worker stateM infoM where
@@ -161,6 +160,19 @@ onGetInfo taskId stateM infoM = queryState worker stateM infoM where
     = fmap taskInfo
     . M.lookup taskId
     . taskManStateTaskMap
+
+onGetAllInfos :: MVar TaskManState -> MVar [Info] -> IO ()
+onGetAllInfos stateM infosM = queryState (getFilteredTaskInfos $ const True) stateM infosM
+
+onGetFilteredInfos :: (Info -> Bool) -> MVar TaskManState -> MVar [Info] -> IO ()
+onGetFilteredInfos p stateM infosM = queryState (getFilteredTaskInfos p) stateM infosM
+
+getFilteredTaskInfos :: (Info -> Bool) -> TaskManState -> [Info]
+getFilteredTaskInfos p
+  = filter p
+  . fmap (taskInfo . snd)
+  . M.toList
+  . taskManStateTaskMap
 
 onDone :: TaskId -> MVar TaskManState -> IO ()
 onDone taskId stateM = modifyTaskManState (setFinalStatus taskId Done "Done") stateM
