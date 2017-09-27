@@ -47,46 +47,34 @@ newTaskMan = do
   return $ TaskMan eventM
 
 start :: TaskMan -> Action -> IO TaskId
-start (TaskMan eventM) action = do
-  taskIdM <- newEmptyMVar
-  putMVar eventM $ ControlStart action taskIdM
-  takeMVar taskIdM
+start taskMan action = sendEventAndGetResult taskMan (ControlStart action)
 
 cancel :: TaskMan -> TaskId -> IO ()
-cancel (TaskMan eventM) taskId =
-  putMVar eventM $ ControlCancel taskId
+cancel (TaskMan eventM) taskId = putMVar eventM $ ControlCancel taskId
 
 shutdown :: TaskMan -> IO ()
-shutdown (TaskMan eventM) =
-  putMVar eventM $ ControlShutdown
+shutdown (TaskMan eventM) = putMVar eventM $ ControlShutdown
 
 getTotalCount :: TaskMan -> IO Int
-getTotalCount (TaskMan eventM) = do
-  countM <- newEmptyMVar
-  putMVar eventM $ GetTotalCount countM
-  takeMVar countM
+getTotalCount taskMan = sendEventAndGetResult taskMan GetTotalCount
 
 getStatusCount :: TaskMan -> Status -> IO Int
-getStatusCount (TaskMan eventM) status = do
-  countM <- newEmptyMVar
-  putMVar eventM $ GetStatusCount status countM
-  takeMVar countM
-
+getStatusCount taskMan status = sendEventAndGetResult taskMan (GetStatusCount status)
 
 getInfo :: TaskMan -> TaskId -> IO (Maybe Info)
 getInfo taskMan taskId = sendEventAndGetResult taskMan (GetInfo taskId)
+
+getAllInfos :: TaskMan -> IO [Info]
+getAllInfos taskMan = sendEventAndGetResult taskMan GetAllInfos
+
+getFilteredInfos :: TaskMan -> (Info -> Bool) -> IO [Info]
+getFilteredInfos taskMan p = sendEventAndGetResult taskMan (GetFilteredInfos p)
 
 sendEventAndGetResult :: TaskMan -> (MVar a -> Event) -> IO a
 sendEventAndGetResult (TaskMan eventM) f = do
   resultM <- newEmptyMVar
   putMVar eventM $ f resultM
   takeMVar resultM
-
-getAllInfos :: TaskMan -> IO [Info]
-getAllInfos = undefined
-
-getFilteredInfos :: TaskMan -> (Info -> Bool) -> IO [Info]
-getFilteredInfos = undefined
 
 taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
