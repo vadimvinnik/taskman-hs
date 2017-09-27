@@ -64,6 +64,12 @@ getStatusCount = undefined
 getInfo :: TaskMan -> TaskId -> IO (Maybe Info)
 getInfo = undefined
 
+getAllInfos :: TaskMan -> IO [Info]
+getAllInfos = undefined
+
+getFilteredInfos :: TaskMan -> (Info -> Bool) -> IO [Info]
+getFilteredInfos = undefined
+
 taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
@@ -152,7 +158,7 @@ onGetTotalCount stateM countM = queryState worker stateM countM where
 
 onGetCount :: Status -> MVar TaskManState -> MVar Int -> IO ()
 onGetCount s stateM countM = queryState worker stateM countM where
-  worker = length . (getFilteredTaskInfos $ (s==) . currentStatus . infoCurrent)
+  worker = length . (getFilteredInfosFromTaskManState $ (s==) . currentStatus . infoCurrent)
 
 onGetInfo :: TaskId -> MVar TaskManState -> MVar (Maybe Info) -> IO ()
 onGetInfo taskId stateM infoM = queryState worker stateM infoM where
@@ -162,13 +168,13 @@ onGetInfo taskId stateM infoM = queryState worker stateM infoM where
     . taskManStateTaskMap
 
 onGetAllInfos :: MVar TaskManState -> MVar [Info] -> IO ()
-onGetAllInfos stateM infosM = queryState (getFilteredTaskInfos $ const True) stateM infosM
+onGetAllInfos stateM infosM = queryState (getFilteredInfosFromTaskManState $ const True) stateM infosM
 
 onGetFilteredInfos :: (Info -> Bool) -> MVar TaskManState -> MVar [Info] -> IO ()
-onGetFilteredInfos p stateM infosM = queryState (getFilteredTaskInfos p) stateM infosM
+onGetFilteredInfos p stateM infosM = queryState (getFilteredInfosFromTaskManState p) stateM infosM
 
-getFilteredTaskInfos :: (Info -> Bool) -> TaskManState -> [Info]
-getFilteredTaskInfos p
+getFilteredInfosFromTaskManState :: (Info -> Bool) -> TaskManState -> [Info]
+getFilteredInfosFromTaskManState p
   = filter p
   . fmap (taskInfo . snd)
   . M.toList
