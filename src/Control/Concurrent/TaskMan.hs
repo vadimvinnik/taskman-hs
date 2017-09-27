@@ -74,7 +74,13 @@ getStatusCount (TaskMan eventM) status = do
 
 
 getInfo :: TaskMan -> TaskId -> IO (Maybe Info)
-getInfo = undefined
+getInfo taskMan taskId = sendEventAndGetResult taskMan (GetInfo taskId)
+
+sendEventAndGetResult :: TaskMan -> (MVar a -> Event) -> IO a
+sendEventAndGetResult (TaskMan eventM) f = do
+  resultM <- newEmptyMVar
+  putMVar eventM $ f resultM
+  takeMVar resultM
 
 getAllInfos :: TaskMan -> IO [Info]
 getAllInfos = undefined
