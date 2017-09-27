@@ -53,7 +53,8 @@ start (TaskMan eventM) action = do
   takeMVar taskIdM
 
 cancel :: TaskMan -> TaskId -> IO ()
-cancel = undefined
+cancel (TaskMan eventM) taskId =
+  putMVar eventM $ ControlCancel taskId
 
 shutdown :: TaskMan -> IO ()
 shutdown = undefined
