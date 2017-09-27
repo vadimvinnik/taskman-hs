@@ -61,7 +61,10 @@ shutdown (TaskMan eventM) =
   putMVar eventM $ ControlShutdown
 
 getTotalCount :: TaskMan -> IO Int
-getTotalCount = undefined
+getTotalCount (TaskMan eventM) = do
+  countM <- newEmptyMVar
+  putMVar eventM $ GetTotalCount countM
+  takeMVar countM
 
 getStatusCount :: TaskMan -> Status -> IO Int
 getStatusCount = undefined
