@@ -149,7 +149,6 @@ startTaskAndGetId action eventM state = do
         & taskManStateTaskMap %~ (M.insert taskId task)
   return (state', taskId)
 
--- todo: does it really catch ThreadKilled?
 wrapTask :: Action -> TaskId -> MVar Event -> IO ()
 wrapTask action taskId eventM =
   catches (action >> signalDone) (map Handler [handleCanceled, handleFailure]) where
