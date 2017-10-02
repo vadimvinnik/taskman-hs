@@ -3,7 +3,19 @@
              TemplateHaskell
  #-}
 
-module Control.Concurrent.TaskMan where
+module Control.Concurrent.TaskMan
+  (   Action
+    , TaskMan
+    , newTaskMan
+    , start
+    , cancel
+    , shutdown
+    , getTotalCount
+    , getStatusCount
+    , getInfo
+    , getAllInfos
+    , getFilteredInfos
+  ) where
 
 import Control.Concurrent
 import Data.Map ((!))
@@ -16,7 +28,7 @@ import Control.Lens
 type Action = IO ()
 
 data Event
-  = ControlStart Action (MVar TaskId)
+  = ControlStart Action String (MVar TaskId)
   | ControlCancel TaskId
   | ControlShutdown
   | GetTotalCount (MVar Int)
@@ -27,7 +39,6 @@ data Event
   | ReportDone TaskId
   | ReportCanceled TaskId
   | ReportFailure TaskId String
-  | ReportPhase TaskId String
 
 data Task = Task
   { _taskThreadId :: ThreadId
@@ -53,8 +64,8 @@ newTaskMan = do
   _ <- forkIO $ taskManLoop stateM eventM
   return $ TaskMan eventM
 
-start :: TaskMan -> Action -> IO TaskId
-start taskMan action = sendEventAndGetResult taskMan (ControlStart action)
+start :: TaskMan -> Action -> String -> IO TaskId
+start taskMan action title = sendEventAndGetResult taskMan (ControlStart action title)
 
 cancel :: TaskMan -> TaskId -> IO ()
 cancel (TaskMan eventM) taskId = putMVar eventM $ ControlCancel taskId
@@ -87,17 +98,17 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    ControlStart action taskIdM  -> onStart action eventM stateM taskIdM
-    ControlCancel taskId         -> onCancel taskId stateM
-    GetTotalCount countM         -> onGetTotalCount stateM countM
-    GetStatusCount status countM -> onGetCount status stateM countM
-    GetInfo taskId infoM         -> onGetInfo taskId stateM infoM
-    GetAllInfos infosM           -> onGetAllInfos stateM infosM
-    GetFilteredInfos p infosM    -> onGetFilteredInfos p stateM infosM
-    ReportDone taskId            -> onDone taskId stateM
-    ReportCanceled taskId        -> onCanceled taskId stateM
-    ReportFailure taskId msg     -> onFailure taskId msg stateM
-    _-> return () -- tmp. until all events are implemented
+    ControlStart action title taskIdM  -> onStart action title eventM stateM taskIdM
+    ControlCancel taskId               -> onCancel taskId stateM
+    GetTotalCount countM               -> onGetTotalCount stateM countM
+    GetStatusCount status countM       -> onGetCount status stateM countM
+    GetInfo taskId infoM               -> onGetInfo taskId stateM infoM
+    GetAllInfos infosM                 -> onGetAllInfos stateM infosM
+    GetFilteredInfos p infosM          -> onGetFilteredInfos p stateM infosM
+    ReportDone taskId                  -> onDone taskId stateM
+    ReportCanceled taskId              -> onCanceled taskId stateM
+    ReportFailure taskId msg           -> onFailure taskId msg stateM
+    ControlShutdown                    -> return ()
   case event of
     ControlShutdown -> return ()
     _ -> taskManLoop stateM eventM
@@ -120,28 +131,24 @@ modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 queryState :: (TaskManState -> a) -> MVar TaskManState -> MVar a -> IO ()
 queryState f stateM mVar = (readMVar stateM) >>= (putMVar mVar) . f
 
-onStart :: Action -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
-onStart action eventM stateM taskIdM =
-  putModifyingTaskManState (startTaskAndGetId action eventM) stateM taskIdM
+onStart :: Action -> String -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
+onStart action title eventM stateM taskIdM =
+  putModifyingTaskManState (startTaskAndGetId action title eventM) stateM taskIdM
 
-startTaskAndGetId :: Action -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
-startTaskAndGetId action eventM state = do
+startTaskAndGetId :: Action -> String -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
+startTaskAndGetId action title eventM state = do
   let taskId = state^.taskManStateNextId
   now <- getCurrentTime
   threadId <- forkIO $ wrapTask action taskId eventM
   let initial = Initial {
     _initialTaskId = taskId,
-    _initialTitle = "Task #" ++ show taskId,
-    _initialStarted = now,
-    _initialParent = Nothing
+    _initialTitle = if null title then "Task #" ++ show taskId else title,
+    _initialStarted = now
   }
   let current = Current {
     _currentStatus = InProgress,
-    _currentPhase = "",
-    _currentEnded = Nothing,
-    _currentChildren = [],
-    _currentTotalWork = Nothing,
-    _currentDoneWork = 0
+    _currentPhase = "In progress",
+    _currentEnded = Nothing
   }
   let task = Task threadId (Info initial current)
   let state' = state
