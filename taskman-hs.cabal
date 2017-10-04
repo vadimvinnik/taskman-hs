@@ -24,6 +24,7 @@ library
                , composition >= 1.0.2.1
                , time >= 1.5.0.0
                , lens >= 4.0.0
+               , either >= 4.0
   hs-source-dirs:   src/
   ghc-options:      -Wall
   exposed-modules:  Control.Concurrent.TaskMan
