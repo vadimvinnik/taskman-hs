@@ -17,11 +17,12 @@ module Control.Concurrent.TaskMan
     , getFilteredInfos
   ) where
 
+import Control.Concurrent.TaskMan.Task.Info
+
 import Control.Concurrent
 import Data.Map ((!))
 import qualified Data.Map as M
 import Data.Time
-import Control.Concurrent.TaskMan.Task.Info
 import Control.Exception
 import Control.Lens
 

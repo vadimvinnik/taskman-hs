@@ -2,17 +2,10 @@
 
 module Control.Concurrent.TaskMan.Task.Info where
 
-import Data.Time
-import Control.Lens
+import Data.Time (UTCTime)
+import Data.Either (isRight)
 
 type TaskId = Int
-
-data Status
-  = InProgress
-  | Done
-  | Canceled
-  | Failure
-  deriving (Show, Eq, Ord)
 
 -- Properties that are set once when the task is started and never change.
 data Initial = Initial
@@ -22,17 +15,31 @@ data Initial = Initial
   } deriving (Show)
 
 -- Properties that change while the task is running
-data Current = Current
-  { _currentStatus :: Status
-  , _currentPhase :: String
-  , _currentEnded :: Maybe UTCTime
+data Progress = Progress
+  { _currentPhase :: String
+  , _progressTotalWork :: Int
+  , _progressDoneWork :: Int
   } deriving (Show)
+
+data Status
+  = Done
+  | Canceled
+  | Failure String
+  deriving (Show)
+
+data Final = Final
+  { _finalTime :: UTCTime
+  , _finalStatus :: Status
+  , _finalTotalWork :: Int
+  } deriving (Show)
+
+type Current = Either Progress Final
 
 data Info = Info
   { _infoInitial :: Initial
   , _infoCurrent :: Current
   } deriving (Show)
 
-makeLenses ''Initial
-makeLenses ''Current
-makeLenses ''Info
+isFinished :: Current -> Bool
+isFinished = isRight
+
