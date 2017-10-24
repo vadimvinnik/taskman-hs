@@ -1,39 +1,44 @@
-module Control.Concurrent.TaskMan.Task where
+module Control.Concurrent.TaskMan.Task
+  ( TaskOf
+  , Task
+  , TaskParams(..)
+  , askId
+  , setPhase
+  , setTotalWork
+  , setDoneWork
+  )  where
 
 import qualified Control.Concurrent.TaskMan.Task.Info as I
 
 import Control.Monad.Reader (ReaderT, asks, lift)
 import Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import Data.Either.Combinators (fromLeft')
-import Control.Lens
 
 data TaskParams = TaskParams
   { initial :: I.Initial
   , currentV :: TVar I.Current
   }
 
-type Task a = ReaderT TaskParams IO a
+type TaskOf a = ReaderT TaskParams IO a
+type Task = TaskOf ()
 
-askId :: Task I.TaskId
-askId = asks (view I.taskId . initial)
+askId :: TaskOf I.TaskId
+askId = asks (I.taskId . initial)
 
 -- internal
-askCurrentV :: Task (TVar I.Current)
+askCurrentV :: TaskOf (TVar I.Current)
 askCurrentV = asks currentV
 
-modifyProgress :: (I.Progress -> I.Progress) -> Task ()
+modifyProgress :: (I.Progress -> I.Progress) -> TaskOf ()
 modifyProgress f = do
   c <- askCurrentV
   lift $ atomically $ modifyTVar' c (Left . f . fromLeft')
 
-setProgress :: I.Progress -> Task ()
-setProgress p = modifyProgress (const p)
+setPhase :: String -> TaskOf ()
+setPhase s = modifyProgress (\p -> p { I.phase = s })
 
-setPhase :: String -> Task ()
-setPhase s = modifyProgress (set I.phase s)
+setTotalWork :: Int -> TaskOf ()
+setTotalWork x = modifyProgress (\p -> p { I.totalWork = x})
 
-setTotalWork :: Int -> Task ()
-setTotalWork x = modifyProgress (set I.totalWork x)
-
-setDoneWork :: Int -> Task ()
-setDoneWork x = modifyProgress (set I.doneWork x)
+setDoneWork :: Int -> TaskOf ()
+setDoneWork x = modifyProgress (\p -> p { I.doneWork = x})
