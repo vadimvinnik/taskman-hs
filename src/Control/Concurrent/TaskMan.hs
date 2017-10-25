@@ -97,18 +97,18 @@ setTasktStatus taskId status state = do
   let descriptor = (_active state) ! taskId
   let currentV = _currentV $ _params descriptor
   (Left progress) <- readTVarIO currentV
-  let final = Final {
-    _ended = now,
-    _status = status,
-    _work = _doneWork progress
-  }
+  let final = Final
+        { _ended = now
+        , _status = status
+        , _work = _doneWork progress
+        }
   atomically $ writeTVar currentV $ Right final
   let active' = M.delete taskId $ _active state
   let finished' = M.insert taskId final $ _finished state
-  let state' = state {
-    _active = active',
-    _finished = finished'
-  }
+  let state' = state
+        { _active = active'
+        , _finished = finished'
+        }
   return state'
 
 putModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> MVar a -> IO ()
@@ -130,27 +130,27 @@ startTaskAndGetId :: Task -> String -> MVar Event -> TaskManState -> IO (TaskMan
 startTaskAndGetId task title eventM state = do
   let taskId = _nextId state
   now <- getCurrentTime
-  let initial = Initial {
-    _taskId = taskId,
-    _title = if null title then "Task #" ++ show taskId else title,
-    _started = now
-  }
-  let progress = Progress {
-    _phase = "In progress",
-    _totalWork = 0,
-    _doneWork = 0
-  }
+  let initial = Initial
+        { _taskId = taskId
+        , _title = if null title then "Task #" ++ show taskId else title
+        , _started = now
+        }
+  let progress = Progress
+        { _phase = "In progress"
+        , _totalWork = 0
+        , _doneWork = 0
+        }
   currentV <- newTVarIO $ Left progress
-  let params = TaskParams {
-    _initial = initial,
-    _currentV = currentV
-  }
+  let params = TaskParams
+        { _initial = initial
+        , _currentV = currentV
+        }
   threadId <- forkIO $ runTask task params eventM
   let descriptor = TaskDescriptor threadId params
-  let state' = state {
-    _nextId = taskId + 1,
-    _active = M.insert taskId descriptor (_active state)
-  }
+  let state' = state
+        { _nextId = taskId + 1
+        , _active = M.insert taskId descriptor (_active state)
+        }
   return (state', taskId)
 
 runTask :: Task -> TaskParams -> MVar Event -> IO ()

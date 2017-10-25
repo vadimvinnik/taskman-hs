@@ -30,4 +30,6 @@ library
   hs-source-dirs:   src/
   ghc-options:      -Wall
   exposed-modules:  Control.Concurrent.TaskMan
+                 ,  Control.Concurrent.TaskMan.Task
+                 ,  Control.Concurrent.TaskMan.Task.Info
 
