@@ -1,4 +1,3 @@
-{-# LANGUAGE     DisambiguateRecordFields       #-}
 {-# LANGUAGE     DuplicateRecordFields          #-}
 
 module Control.Concurrent.TaskMan.Task

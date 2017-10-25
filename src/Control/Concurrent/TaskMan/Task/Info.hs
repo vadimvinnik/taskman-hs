@@ -1,5 +1,3 @@
-{-# LANGUAGE     DuplicateRecordFields          #-}
-
 module Control.Concurrent.TaskMan.Task.Info
   ( TaskId
   , Initial(..)

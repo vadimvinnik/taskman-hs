@@ -1,6 +1,4 @@
 {-# LANGUAGE     TupleSections                  #-}
-{-# LANGUAGE     ScopedTypeVariables            #-}
-{-# LANGUAGE     DisambiguateRecordFields       #-}
 {-# LANGUAGE     DuplicateRecordFields          #-}
 {-# LANGUAGE     RecordWildCards                #-}
 
