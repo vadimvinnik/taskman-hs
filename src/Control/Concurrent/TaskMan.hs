@@ -19,11 +19,11 @@ import Control.Concurrent.TaskMan.Task.Info as I
 
 import Control.Concurrent
 import Control.Concurrent.STM
-import Data.Map ((!))
-import qualified Data.Map as M
+import Data.Either.Combinators (fromLeft')
+import Data.Map (Map, empty, insert, delete, (!))
 import Control.Monad.Reader (runReaderT)
 import Data.Time (getCurrentTime)
-import Control.Exception
+import Control.Exception (AsyncException(..), Handler(..), catches, throw, displayException)
 
 data Event
   = Start Task String (MVar TaskDescriptor)
@@ -36,8 +36,8 @@ data TaskDescriptor = TaskDescriptor
   , _params :: TaskParams
   }
 
-type ActiveTaskMap = M.Map TaskId TaskDescriptor
-type FinishedTaskMap = M.Map TaskId Info
+type ActiveTaskMap = Map TaskId TaskDescriptor
+type FinishedTaskMap = Map TaskId Info
 
 data TaskManState = TaskManState
   { _nextId :: TaskId
@@ -51,7 +51,7 @@ newtype TaskMan = TaskMan { _eventM :: MVar Event }
 
 newTaskMan :: IO TaskMan
 newTaskMan = do
-  stateM <- newMVar $ TaskManState 0 M.empty M.empty
+  stateM <- newMVar $ TaskManState 0 empty empty
   eventM <- newEmptyMVar
   _ <- forkIO $ taskManLoop stateM eventM
   return $ TaskMan eventM
@@ -110,7 +110,8 @@ setTasktStatus taskId status state = do
   let descriptor = (_active state) ! taskId
   let params = _params descriptor
   let currentV = _currentV params
-  (Left progress) <- readTVarIO currentV
+  current <- readTVarIO currentV
+  let progress = fromLeft' current
   let final = Final
         { _ended = now
         , _status = status
@@ -118,9 +119,9 @@ setTasktStatus taskId status state = do
         }
   let current' = Right final
   atomically $ writeTVar currentV current'
-  let active' = M.delete taskId $ _active state
+  let active' = delete taskId $ _active state
   let initial = T._initial params
-  let finished' = M.insert taskId (Info initial current') $ _finished state
+  let finished' = insert taskId (Info initial current') $ _finished state
   let state' = state
         { _active = active'
         , _finished = finished'
@@ -165,7 +166,7 @@ startAndGetTask task title eventM state = do
   let descriptor = TaskDescriptor threadId params
   let state' = state
         { _nextId = taskId + 1
-        , _active = M.insert taskId descriptor (_active state)
+        , _active = insert taskId descriptor (_active state)
         }
   return (state', descriptor)
 
