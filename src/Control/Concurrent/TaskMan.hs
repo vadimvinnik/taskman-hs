@@ -2,16 +2,22 @@
 {-# LANGUAGE     ScopedTypeVariables            #-}
 {-# LANGUAGE     DisambiguateRecordFields       #-}
 {-# LANGUAGE     DuplicateRecordFields          #-}
+{-# LANGUAGE     RecordWildCards                #-}
 
 module Control.Concurrent.TaskMan
-  ( TaskMan
+  ( TaskDescriptor
+  , TaskManState(_active, _finished)
+  , TaskMan
   , newTaskMan
   , start
   , shutdown
+  , query
+  , cancel
+  , getInfo
   ) where
 
 import Control.Concurrent.TaskMan.Task as T
-import Control.Concurrent.TaskMan.Task.Info
+import Control.Concurrent.TaskMan.Task.Info as I
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -22,7 +28,7 @@ import Data.Time (getCurrentTime)
 import Control.Exception
 
 data Event
-  = Start Task String (MVar TaskId)
+  = Start Task String (MVar TaskDescriptor)
   | Query (MVar TaskManState)
   | Finish TaskId Status
   | Shutdown
@@ -52,14 +58,23 @@ newTaskMan = do
   _ <- forkIO $ taskManLoop stateM eventM
   return $ TaskMan eventM
 
-start :: TaskMan -> Task -> String -> IO TaskId
+start :: TaskMan -> Task -> String -> IO TaskDescriptor
 start taskMan task title = sendEventAndGetResult taskMan (Start task title)
+
+shutdown :: TaskMan -> IO ()
+shutdown (TaskMan eventM) = putMVar eventM $ Shutdown
 
 query :: TaskMan -> IO TaskManState
 query taskMan = sendEventAndGetResult taskMan Query
 
-shutdown :: TaskMan -> IO ()
-shutdown (TaskMan eventM) = putMVar eventM $ Shutdown
+cancel :: TaskDescriptor -> IO ()
+cancel (TaskDescriptor{..}) = throwTo _threadId ThreadKilled
+
+getInfo :: TaskDescriptor -> IO Info
+getInfo task = do
+  let TaskParams initial currentV = _params task
+  current <- readTVarIO currentV
+  return $ Info initial current
 
 -- Internals
 
@@ -67,7 +82,7 @@ taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
 taskManLoop stateM eventM = do
   event <- takeMVar eventM
   case event of
-    Start task title taskIdM  -> onStart task title eventM stateM taskIdM
+    Start task title taskM    -> onStart task title eventM stateM taskM
     Query resultM             -> onQuery stateM resultM
     Finish taskId status      -> onFinish taskId status stateM
     Shutdown                  -> return ()
@@ -81,9 +96,9 @@ sendEventAndGetResult (TaskMan eventM) f = do
   putMVar eventM $ f resultM
   takeMVar resultM
 
-onStart :: Task -> String -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
-onStart action title eventM stateM taskIdM =
-  putModifyingTaskManState (startTaskAndGetId action title eventM) stateM taskIdM
+onStart :: Task -> String -> MVar Event -> MVar TaskManState -> MVar TaskDescriptor -> IO ()
+onStart action title eventM stateM taskM =
+  putModifyingTaskManState (startAndGetTask action title eventM) stateM taskM
 
 onQuery :: MVar TaskManState -> MVar TaskManState -> IO ()
 onQuery stateM resultM = (readMVar stateM) >>= (putMVar resultM)
@@ -126,8 +141,8 @@ getModifyingTaskManState f stateM = do
 modifyTaskManState :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
 modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 
-startTaskAndGetId :: Task -> String -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
-startTaskAndGetId task title eventM state = do
+startAndGetTask :: Task -> String -> MVar Event -> TaskManState -> IO (TaskManState, TaskDescriptor)
+startAndGetTask task title eventM state = do
   let taskId = _nextId state
   now <- getCurrentTime
   let initial = Initial
@@ -151,7 +166,7 @@ startTaskAndGetId task title eventM state = do
         { _nextId = taskId + 1
         , _active = M.insert taskId descriptor (_active state)
         }
-  return (state', taskId)
+  return (state', descriptor)
 
 runTask :: Task -> TaskParams -> MVar Event -> IO ()
 runTask task params eventM =
@@ -161,35 +176,3 @@ runTask task params eventM =
     handleFailure e = signal $ Failure (displayException e)
     signal status = putMVar eventM $ Finish taskId status
     taskId = _taskId $ T._initial $ params
-
-{-
-onGetTotalCount :: MVar TaskManState -> MVar Int -> IO ()
-onGetTotalCount stateM countM = queryState worker stateM countM where
-  worker
-    = M.size
-    . view taskManStateTaskMap
-
-onGetCount :: Status -> MVar TaskManState -> MVar Int -> IO ()
-onGetCount s stateM countM = queryState worker stateM countM where
-  worker = length . (getFilteredInfosFromTaskManState $ (s==) . (view $ infoCurrent.currentStatus))
-
-onGetInfo :: TaskId -> MVar TaskManState -> MVar (Maybe Info) -> IO ()
-onGetInfo taskId stateM infoM = queryState worker stateM infoM where
-  worker
-    = fmap (view taskInfo)
-    . M.lookup taskId
-    . view taskManStateTaskMap
-
-onGetAllInfos :: MVar TaskManState -> MVar [Info] -> IO ()
-onGetAllInfos stateM infosM = queryState (getFilteredInfosFromTaskManState $ const True) stateM infosM
-
-onGetFilteredInfos :: (Info -> Bool) -> MVar TaskManState -> MVar [Info] -> IO ()
-onGetFilteredInfos p stateM infosM = queryState (getFilteredInfosFromTaskManState p) stateM infosM
-
-getFilteredInfosFromTaskManState :: (Info -> Bool) -> TaskManState -> [Info]
-getFilteredInfosFromTaskManState p
-  = filter p
-  . fmap ((view taskInfo) . snd)
-  . M.toList
-  . view taskManStateTaskMap
--}
