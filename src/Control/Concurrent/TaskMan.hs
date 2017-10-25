@@ -1,7 +1,7 @@
-{-# LANGUAGE TupleSections,
-             ScopedTypeVariables,
-             TemplateHaskell
- #-}
+{-# LANGUAGE     TupleSections                  #-}
+{-# LANGUAGE     ScopedTypeVariables            #-}
+{-# LANGUAGE     DisambiguateRecordFields       #-}
+{-# LANGUAGE     DuplicateRecordFields          #-}
 
 module Control.Concurrent.TaskMan
   ( TaskMan
@@ -10,8 +10,8 @@ module Control.Concurrent.TaskMan
   , shutdown
   ) where
 
-import qualified Control.Concurrent.TaskMan.Task as T
-import qualified Control.Concurrent.TaskMan.Task.Info as I
+import Control.Concurrent.TaskMan.Task as T
+import Control.Concurrent.TaskMan.Task.Info
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -22,26 +22,26 @@ import Data.Time (getCurrentTime)
 import Control.Exception
 
 data Event
-  = Start T.Task String (MVar I.TaskId)
+  = Start Task String (MVar TaskId)
   | Query (MVar TaskManState)
-  | Finish I.TaskId I.Status
+  | Finish TaskId Status
   | Shutdown
 
 data TaskDescriptor = TaskDescriptor
-  { threadId :: ThreadId
-  , params :: T.TaskParams
+  { _threadId :: ThreadId
+  , _params :: TaskParams
   }
 
-type ActiveTaskMap = M.Map I.TaskId TaskDescriptor
-type FinishedTaskMap = M.Map I.TaskId I.Final
+type ActiveTaskMap = M.Map TaskId TaskDescriptor
+type FinishedTaskMap = M.Map TaskId Final
 
 data TaskManState = TaskManState
-  { nextId :: I.TaskId
-  , active :: ActiveTaskMap
-  , finished :: FinishedTaskMap
+  { _nextId :: TaskId
+  , _active :: ActiveTaskMap
+  , _finished :: FinishedTaskMap
   }
 
-newtype TaskMan = TaskMan { eventM :: MVar Event }
+newtype TaskMan = TaskMan { _eventM :: MVar Event }
 
 -- Exports
 
@@ -52,7 +52,7 @@ newTaskMan = do
   _ <- forkIO $ taskManLoop stateM eventM
   return $ TaskMan eventM
 
-start :: TaskMan -> T.Task -> String -> IO I.TaskId
+start :: TaskMan -> Task -> String -> IO TaskId
 start taskMan task title = sendEventAndGetResult taskMan (Start task title)
 
 query :: TaskMan -> IO TaskManState
@@ -81,33 +81,33 @@ sendEventAndGetResult (TaskMan eventM) f = do
   putMVar eventM $ f resultM
   takeMVar resultM
 
-onStart :: T.Task -> String -> MVar Event -> MVar TaskManState -> MVar I.TaskId -> IO ()
+onStart :: Task -> String -> MVar Event -> MVar TaskManState -> MVar TaskId -> IO ()
 onStart action title eventM stateM taskIdM =
   putModifyingTaskManState (startTaskAndGetId action title eventM) stateM taskIdM
 
 onQuery :: MVar TaskManState -> MVar TaskManState -> IO ()
 onQuery stateM resultM = (readMVar stateM) >>= (putMVar resultM)
 
-onFinish :: I.TaskId -> I.Status -> MVar TaskManState -> IO ()
+onFinish :: TaskId -> Status -> MVar TaskManState -> IO ()
 onFinish taskId status stateM = modifyTaskManState (setTasktStatus taskId status) stateM
 
-setTasktStatus :: I.TaskId -> I.Status -> TaskManState -> IO TaskManState
+setTasktStatus :: TaskId -> Status -> TaskManState -> IO TaskManState
 setTasktStatus taskId status state = do
   now <- getCurrentTime
-  let descriptor = (active state) ! taskId
-  let currentV = T.currentV $ params descriptor
+  let descriptor = (_active state) ! taskId
+  let currentV = _currentV $ _params descriptor
   (Left progress) <- readTVarIO currentV
-  let final = I.Final {
-    I.ended = now,
-    I.status = status,
-    I.work = I.doneWork progress
+  let final = Final {
+    _ended = now,
+    _status = status,
+    _work = _doneWork progress
   }
   atomically $ writeTVar currentV $ Right final
-  let active' = M.delete taskId $ active state
-  let finished' = M.insert taskId final $ finished state
+  let active' = M.delete taskId $ _active state
+  let finished' = M.insert taskId final $ _finished state
   let state' = state {
-    active = active',
-    finished = finished'
+    _active = active',
+    _finished = finished'
   }
   return state'
 
@@ -126,41 +126,41 @@ getModifyingTaskManState f stateM = do
 modifyTaskManState :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
 modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
 
-startTaskAndGetId :: T.Task -> String -> MVar Event -> TaskManState -> IO (TaskManState, I.TaskId)
+startTaskAndGetId :: Task -> String -> MVar Event -> TaskManState -> IO (TaskManState, TaskId)
 startTaskAndGetId task title eventM state = do
-  let taskId = nextId state
+  let taskId = _nextId state
   now <- getCurrentTime
-  let initial = I.Initial {
-    I.taskId = taskId,
-    I.title = if null title then "Task #" ++ show taskId else title,
-    I.started = now
+  let initial = Initial {
+    _taskId = taskId,
+    _title = if null title then "Task #" ++ show taskId else title,
+    _started = now
   }
-  let progress = I.Progress {
-    I.phase = "In progress",
-    I.totalWork = 0,
-    I.doneWork = 0
+  let progress = Progress {
+    _phase = "In progress",
+    _totalWork = 0,
+    _doneWork = 0
   }
   currentV <- newTVarIO $ Left progress
-  let params = T.TaskParams {
-    T.initial = initial,
-    T.currentV = currentV
+  let params = TaskParams {
+    _initial = initial,
+    _currentV = currentV
   }
   threadId <- forkIO $ runTask task params eventM
   let descriptor = TaskDescriptor threadId params
   let state' = state {
-    nextId = taskId + 1,
-    active = M.insert taskId descriptor (active state)
+    _nextId = taskId + 1,
+    _active = M.insert taskId descriptor (_active state)
   }
   return (state', taskId)
 
-runTask :: T.Task -> T.TaskParams -> MVar Event -> IO ()
+runTask :: Task -> TaskParams -> MVar Event -> IO ()
 runTask task params eventM =
   catches ((runReaderT task params) >> signalDone) (map Handler [handleCanceled, handleFailure]) where
-    signalDone = signal I.Done
-    handleCanceled e = if e == ThreadKilled then signal I.Canceled else throw e
-    handleFailure e = signal $ I.Failure (displayException e)
+    signalDone = signal Done
+    handleCanceled e = if e == ThreadKilled then signal Canceled else throw e
+    handleFailure e = signal $ Failure (displayException e)
     signal status = putMVar eventM $ Finish taskId status
-    taskId = I.taskId $ T.initial $ params
+    taskId = _taskId $ T._initial $ params
 
 {-
 onGetTotalCount :: MVar TaskManState -> MVar Int -> IO ()

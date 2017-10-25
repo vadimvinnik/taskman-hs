@@ -1,3 +1,6 @@
+{-# LANGUAGE     DisambiguateRecordFields       #-}
+{-# LANGUAGE     DuplicateRecordFields          #-}
+
 module Control.Concurrent.TaskMan.Task
   ( TaskOf
   , Task
@@ -8,37 +11,37 @@ module Control.Concurrent.TaskMan.Task
   , setDoneWork
   )  where
 
-import qualified Control.Concurrent.TaskMan.Task.Info as I
+import Control.Concurrent.TaskMan.Task.Info
 
 import Control.Monad.Reader (ReaderT, asks, lift)
 import Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import Data.Either.Combinators (fromLeft')
 
 data TaskParams = TaskParams
-  { initial :: I.Initial
-  , currentV :: TVar I.Current
+  { _initial :: Initial
+  , _currentV :: TVar Current
   }
 
 type TaskOf a = ReaderT TaskParams IO a
 type Task = TaskOf ()
 
-askId :: TaskOf I.TaskId
-askId = asks (I.taskId . initial)
+askId :: TaskOf TaskId
+askId = asks (_taskId . (_initial :: TaskParams -> Initial))
 
 -- internal
-askCurrentV :: TaskOf (TVar I.Current)
-askCurrentV = asks currentV
+askCurrentV :: TaskOf (TVar Current)
+askCurrentV = asks _currentV
 
-modifyProgress :: (I.Progress -> I.Progress) -> TaskOf ()
+modifyProgress :: (Progress -> Progress) -> TaskOf ()
 modifyProgress f = do
   c <- askCurrentV
   lift $ atomically $ modifyTVar' c (Left . f . fromLeft')
 
 setPhase :: String -> TaskOf ()
-setPhase s = modifyProgress (\p -> p { I.phase = s })
+setPhase s = modifyProgress (\p -> p { _phase = s })
 
 setTotalWork :: Int -> TaskOf ()
-setTotalWork x = modifyProgress (\p -> p { I.totalWork = x})
+setTotalWork x = modifyProgress (\p -> p { _totalWork = x})
 
 setDoneWork :: Int -> TaskOf ()
-setDoneWork x = modifyProgress (\p -> p { I.doneWork = x})
+setDoneWork x = modifyProgress (\p -> p { _doneWork = x})

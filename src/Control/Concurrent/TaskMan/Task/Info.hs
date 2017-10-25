@@ -1,26 +1,36 @@
-{-# LANGUAGE RecordWildCards, TemplateHaskell #-}
+{-# LANGUAGE     DuplicateRecordFields          #-}
 
-module Control.Concurrent.TaskMan.Task.Info where
+module Control.Concurrent.TaskMan.Task.Info
+  ( TaskId
+  , Initial(..)
+  , Progress(..)
+  , Status(..)
+  , Final(..)
+  , Current
+  , Info(..)
+  , isFinished
+  ) where
 
 import Data.Time (UTCTime)
 import Data.Either (isRight)
 
 type TaskId = Int
 
--- Properties that are set once when the task is started and never change.
+-- Properties that are set once when the task is started and never change later
 data Initial = Initial
-  { taskId :: TaskId
-  , title :: String
-  , started :: UTCTime
+  { _taskId :: TaskId
+  , _title :: String
+  , _started :: UTCTime
   } deriving (Show)
 
 -- Properties that change while the task is running
 data Progress = Progress
-  { phase :: String
-  , totalWork :: Int
-  , doneWork :: Int
+  { _phase :: String
+  , _totalWork :: Int
+  , _doneWork :: Int
   } deriving (Show)
 
+-- Properties that are set when the task finishes and never change later
 data Status
   = Done
   | Canceled
@@ -28,16 +38,18 @@ data Status
   deriving (Show)
 
 data Final = Final
-  { ended :: UTCTime
-  , status :: Status
-  , work :: Int
+  { _ended :: UTCTime
+  , _status :: Status
+  , _work :: Int
   } deriving (Show)
 
+-- Either the current progress if the task is running or the final result
 type Current = Either Progress Final
 
+-- Full info about the task
 data Info = Info
-  { initial :: Initial
-  , current :: Current
+  { _initial :: Initial
+  , _current :: Current
   } deriving (Show)
 
 isFinished :: Current -> Bool
