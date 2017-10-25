@@ -39,7 +39,7 @@ data TaskDescriptor = TaskDescriptor
   }
 
 type ActiveTaskMap = M.Map TaskId TaskDescriptor
-type FinishedTaskMap = M.Map TaskId Final
+type FinishedTaskMap = M.Map TaskId Info
 
 data TaskManState = TaskManState
   { _nextId :: TaskId
@@ -110,16 +110,19 @@ setTasktStatus :: TaskId -> Status -> TaskManState -> IO TaskManState
 setTasktStatus taskId status state = do
   now <- getCurrentTime
   let descriptor = (_active state) ! taskId
-  let currentV = _currentV $ _params descriptor
+  let params = _params descriptor
+  let currentV = _currentV params
   (Left progress) <- readTVarIO currentV
   let final = Final
         { _ended = now
         , _status = status
         , _work = _doneWork progress
         }
-  atomically $ writeTVar currentV $ Right final
+  let current' = Right final
+  atomically $ writeTVar currentV current'
   let active' = M.delete taskId $ _active state
-  let finished' = M.insert taskId final $ _finished state
+  let initial = T._initial params
+  let finished' = M.insert taskId (Info initial current') $ _finished state
   let state' = state
         { _active = active'
         , _finished = finished'
