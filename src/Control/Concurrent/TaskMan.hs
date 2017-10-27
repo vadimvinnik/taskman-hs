@@ -8,7 +8,6 @@ module Control.Concurrent.TaskMan
   , TaskMan
   , newTaskMan
   , start
-  , shutdown
   , query
   , cancel
   , getInfo
@@ -25,12 +24,6 @@ import Control.Monad.Reader (runReaderT)
 import Data.Time (getCurrentTime)
 import Control.Exception (AsyncException(..), Handler(..), catches, throw, displayException)
 
-data Event
-  = Start Task String (MVar TaskDescriptor)
-  | Query (MVar TaskManState)
-  | Finish TaskId Status
-  | Shutdown
-
 data TaskDescriptor = TaskDescriptor
   { _threadId :: ThreadId
   , _params :: TaskParams
@@ -45,25 +38,45 @@ data TaskManState = TaskManState
   , _finished :: FinishedTaskMap
   }
 
-newtype TaskMan = TaskMan { _eventM :: MVar Event }
+newtype TaskMan = TaskMan { _stateM :: MVar TaskManState }
 
 -- Exports
 
 newTaskMan :: IO TaskMan
-newTaskMan = do
-  stateM <- newMVar $ TaskManState 0 empty empty
-  eventM <- newEmptyMVar
-  _ <- forkIO $ taskManLoop stateM eventM
-  return $ TaskMan eventM
+newTaskMan = fmap TaskMan (newMVar $ TaskManState 0 empty empty)
 
 start :: TaskMan -> Task -> String -> IO TaskDescriptor
-start taskMan task title = sendEventAndGetResult taskMan (Start task title)
-
-shutdown :: TaskMan -> IO ()
-shutdown (TaskMan eventM) = putMVar eventM $ Shutdown
+start taskMan action title = do
+  let stateM = _stateM taskMan
+  state <- takeMVar stateM
+  let taskId = _nextId state
+  now <- getCurrentTime
+  let initial = Initial
+        { _taskId = taskId
+        , _title = if null title then "Task #" ++ show taskId else title
+        , _started = now
+        }
+  let progress = Progress
+        { _phase = "In progress"
+        , _totalWork = 0
+        , _doneWork = 0
+        }
+  currentV <- newTVarIO $ Left progress
+  let params = TaskParams
+        { _initial = initial
+        , _currentV = currentV
+        }
+  threadId <- forkIO $ runTask action params stateM
+  let descriptor = TaskDescriptor threadId params
+  let state' = state
+        { _nextId = taskId + 1
+        , _active = insert taskId descriptor (_active state)
+        }
+  putMVar stateM state'
+  return descriptor
 
 query :: TaskMan -> IO TaskManState
-query taskMan = sendEventAndGetResult taskMan Query
+query = readMVar . _stateM
 
 cancel :: TaskDescriptor -> IO ()
 cancel (TaskDescriptor{..}) = throwTo _threadId ThreadKilled
@@ -76,36 +89,18 @@ getInfo task = do
 
 -- Internals
 
-taskManLoop :: MVar TaskManState -> MVar Event -> IO ()
-taskManLoop stateM eventM = do
-  event <- takeMVar eventM
-  case event of
-    Start task title taskM    -> onStart task title eventM stateM taskM
-    Query resultM             -> onQuery stateM resultM
-    Finish taskId status      -> onFinish taskId status stateM
-    Shutdown                  -> return ()
-  case event of
-    Shutdown -> return ()
-    _ -> taskManLoop stateM eventM
-
-sendEventAndGetResult :: TaskMan -> (MVar a -> Event) -> IO a
-sendEventAndGetResult (TaskMan eventM) f = do
-  resultM <- newEmptyMVar
-  putMVar eventM $ f resultM
-  takeMVar resultM
-
-onStart :: Task -> String -> MVar Event -> MVar TaskManState -> MVar TaskDescriptor -> IO ()
-onStart action title eventM stateM taskM =
-  putModifyingTaskManState (startAndGetTask action title eventM) stateM taskM
-
-onQuery :: MVar TaskManState -> MVar TaskManState -> IO ()
-onQuery stateM resultM = (readMVar stateM) >>= (putMVar resultM)
+runTask :: Task -> TaskParams -> MVar TaskManState -> IO ()
+runTask action params stateM =
+  catches ((runReaderT action params) >> onDone) (map Handler [onCanceled, onFailure]) where
+    onDone = signal Done
+    onCanceled e = if e == ThreadKilled then signal Canceled else throw e
+    onFailure e = signal $ Failure (displayException e)
+    signal status = onFinish taskId status stateM
+    taskId = _taskId $ T._initial $ params
 
 onFinish :: TaskId -> Status -> MVar TaskManState -> IO ()
-onFinish taskId status stateM = modifyTaskManState (setTasktStatus taskId status) stateM
-
-setTasktStatus :: TaskId -> Status -> TaskManState -> IO TaskManState
-setTasktStatus taskId status state = do
+onFinish taskId status stateM = do
+  state <- takeMVar stateM
   now <- getCurrentTime
   let descriptor = (_active state) ! taskId
   let params = _params descriptor
@@ -126,55 +121,5 @@ setTasktStatus taskId status state = do
         { _active = active'
         , _finished = finished'
         }
-  return state'
-
-putModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> MVar a -> IO ()
-putModifyingTaskManState f stateM resultM = do
-  result <- getModifyingTaskManState f stateM
-  putMVar resultM result
-
-getModifyingTaskManState :: (TaskManState -> IO (TaskManState, a)) -> MVar TaskManState -> IO a
-getModifyingTaskManState f stateM = do
-  state <- takeMVar stateM
-  (state', result) <- f state
   putMVar stateM state'
-  return result
 
-modifyTaskManState :: (TaskManState -> IO TaskManState) -> MVar TaskManState -> IO ()
-modifyTaskManState f = getModifyingTaskManState (fmap (fmap (, ())) f)
-
-startAndGetTask :: Task -> String -> MVar Event -> TaskManState -> IO (TaskManState, TaskDescriptor)
-startAndGetTask task title eventM state = do
-  let taskId = _nextId state
-  now <- getCurrentTime
-  let initial = Initial
-        { _taskId = taskId
-        , _title = if null title then "Task #" ++ show taskId else title
-        , _started = now
-        }
-  let progress = Progress
-        { _phase = "In progress"
-        , _totalWork = 0
-        , _doneWork = 0
-        }
-  currentV <- newTVarIO $ Left progress
-  let params = TaskParams
-        { _initial = initial
-        , _currentV = currentV
-        }
-  threadId <- forkIO $ runTask task params eventM
-  let descriptor = TaskDescriptor threadId params
-  let state' = state
-        { _nextId = taskId + 1
-        , _active = insert taskId descriptor (_active state)
-        }
-  return (state', descriptor)
-
-runTask :: Task -> TaskParams -> MVar Event -> IO ()
-runTask task params eventM =
-  catches ((runReaderT task params) >> signalDone) (map Handler [handleCanceled, handleFailure]) where
-    signalDone = signal Done
-    handleCanceled e = if e == ThreadKilled then signal Canceled else throw e
-    handleFailure e = signal $ Failure (displayException e)
-    signal status = putMVar eventM $ Finish taskId status
-    taskId = _taskId $ T._initial $ params
