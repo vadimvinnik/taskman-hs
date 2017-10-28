@@ -6,11 +6,13 @@ module Control.Concurrent.TaskMan.Task.Info
   , Final(..)
   , Current
   , Info(..)
+  , InfoMap
   , isFinished
   ) where
 
 import Data.Time (UTCTime)
 import Data.Either (isRight)
+import Data.Map (Map)
 
 type TaskId = Int
 
@@ -49,6 +51,8 @@ data Info = Info
   { _initial :: Initial
   , _current :: Current
   } deriving (Show)
+
+type InfoMap = Map TaskId Info
 
 isFinished :: Current -> Bool
 isFinished = isRight
